@@ -13,9 +13,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/creack/pty"
@@ -84,7 +86,6 @@ func HandleServerConfig(args []string) {
 	input := strings.TrimSpace(args[0])
 	inputLower := strings.ToLower(input)
 
-	// Check if user requested a reset
 	if inputLower == "reset" || inputLower == "default" || inputLower == "null" || inputLower == "empty" {
 		cfg := &Config{ServerURL: DefaultServerURL}
 		if err := SaveConfig(cfg); err != nil {
@@ -95,7 +96,6 @@ func HandleServerConfig(args []string) {
 		return
 	}
 
-	// Normalize URL format
 	url := input
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
 		url = "http://" + url
@@ -136,7 +136,6 @@ func main() {
 		}
 	}
 
-	// Default run mode: Host Session
 	runHost()
 }
 
@@ -157,14 +156,11 @@ Usage:
 func runHost() {
 	cfg := LoadConfig()
 
-	// FIRST LINE MUST BE INITIAL CONNECTION BANNER
 	fmt.Printf("[MiniShare] Connecting to signaling server: %s\n", cfg.ServerURL)
 
-	// Check manual fallback flag
 	manualFlag := flag.Bool("manual", false, "Run in manual copy-paste mode")
 	flag.CommandLine.Parse(os.Args[1:])
 
-	// 1. Spawn a real shell attached to a pseudo-terminal
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/bash"
@@ -176,7 +172,6 @@ func runHost() {
 	}
 	defer ptmx.Close()
 
-	// 2. Set up WebRTC PeerConnection
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
 	})
@@ -187,11 +182,27 @@ func runHost() {
 
 	done := make(chan struct{})
 
-	// 3. Create DataChannel
 	dc, err := pc.CreateDataChannel("terminal", nil)
 	if err != nil {
 		log.Fatalf("failed to create data channel: %v", err)
 	}
+
+	// Handle graceful SIGINT/SIGTERM shutdown to notify remote peers instantly
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		log.Println("\n[MiniShare] Host shutting down...")
+		if dc != nil {
+			_ = dc.Close()
+		}
+		_ = pc.Close()
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
+	}()
 
 	dc.OnOpen(func() {
 		log.Println("Data channel open — P2P session live")
@@ -204,7 +215,6 @@ func runHost() {
 			hostname, runtime.GOOS, shell)
 		_ = dc.Send([]byte(banner))
 
-		// pty -> remote
 		go func() {
 			buf := make([]byte, 4096)
 			for {
@@ -226,7 +236,6 @@ func runHost() {
 		}()
 	})
 
-	// remote -> pty (with live command logging on Host console)
 	var cmdBuffer bytes.Buffer
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
 		for _, b := range msg.Data {
@@ -265,7 +274,6 @@ func runHost() {
 		}
 	})
 
-	// 4. Build offer and wait for ICE gathering
 	offer, err := pc.CreateOffer(nil)
 	if err != nil {
 		log.Fatalf("failed to create offer: %v", err)
@@ -283,7 +291,6 @@ func runHost() {
 		return
 	}
 
-	// Post offer to signaling server C
 	serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
 	resp, err := postJSON(serverURL+"/api/session", map[string]string{"offer": offerCode})
 	if err != nil {
@@ -313,7 +320,6 @@ func runHost() {
 
 	fmt.Println("\nWaiting for peer to connect...")
 
-	// Poll server for viewer answer
 	go func() {
 		for {
 			time.Sleep(1 * time.Second)
@@ -332,7 +338,11 @@ func runHost() {
 				if ansData.Answer != "" {
 					var answer webrtc.SessionDescription
 					decodePayload(ansData.Answer, &answer)
-					_ = pc.SetRemoteDescription(answer)
+					if setErr := pc.SetRemoteDescription(answer); setErr != nil {
+						log.Printf("error setting remote answer: %v", setErr)
+					} else {
+						log.Println("Remote answer received — establishing P2P link...")
+					}
 					break
 				}
 			}
@@ -374,7 +384,6 @@ func runManualHost(pc *webrtc.PeerConnection, offerCode string, done chan struct
 func runViewer(uuid string) {
 	cfg := LoadConfig()
 
-	// FIRST LINE MUST BE INITIAL CONNECTION BANNER
 	fmt.Printf("[MiniShare] Connecting to signaling server: %s\n", cfg.ServerURL)
 
 	serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
@@ -401,6 +410,23 @@ func runViewer(uuid string) {
 	var dataChan *webrtc.DataChannel
 	connected := make(chan struct{})
 	done := make(chan struct{})
+
+	// Handle graceful SIGINT/SIGTERM shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		log.Println("\n[MiniShare] Viewer shutting down...")
+		if dataChan != nil {
+			_ = dataChan.Close()
+		}
+		_ = pc.Close()
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
+	}()
 
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		dataChan = dc
@@ -462,13 +488,11 @@ func runViewer(uuid string) {
 		log.Fatal("failed to connect to host")
 	}
 
-	// Terminal Raw mode setup
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err == nil {
 		defer term.Restore(int(os.Stdin.Fd()), oldState)
 	}
 
-	// Keyboard input loop with Ctrl+] detach support
 	go func() {
 		buf := make([]byte, 1024)
 		for {
@@ -510,14 +534,7 @@ func encodePayload(v interface{}) string {
 	if err != nil {
 		log.Fatalf("marshal error: %v", err)
 	}
-	var buf bytes.Buffer
-	w, err := flate.NewWriter(&buf, flate.BestCompression)
-	if err != nil {
-		return base64.StdEncoding.EncodeToString(b)
-	}
-	w.Write(b)
-	w.Close()
-	return base64.RawURLEncoding.EncodeToString(buf.Bytes())
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 func decodePayload(s string, v interface{}) {
@@ -526,9 +543,9 @@ func decodePayload(s string, v interface{}) {
 		log.Fatalf("no input code provided")
 	}
 
-	b, err := base64.RawURLEncoding.DecodeString(s)
+	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		b, err = base64.StdEncoding.DecodeString(s)
+		b, err = base64.RawURLEncoding.DecodeString(s)
 		if err != nil {
 			log.Fatalf("invalid code encoding: %v", err)
 		}

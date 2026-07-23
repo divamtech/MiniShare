@@ -147,9 +147,9 @@ func main() {
 		}
 	})
 
-	// Serve Embedded Web SPA at root
+	// Serve Embedded Web SPA at root or /app/
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
+		if r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/app/") {
 			http.NotFound(w, r)
 			return
 		}

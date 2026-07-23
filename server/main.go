@@ -30,14 +30,14 @@ type Store struct {
 
 func NewStore() *Store {
 	s := &Store{sessions: make(map[string]*Session)}
-	// Periodic cleanup of expired sessions (10-minute TTL)
+	// Periodic cleanup of expired sessions (24-hour TTL)
 	go func() {
 		for {
-			time.Sleep(2 * time.Minute)
+			time.Sleep(10 * time.Minute)
 			s.mu.Lock()
 			now := time.Now()
 			for id, sess := range s.sessions {
-				if now.Sub(sess.CreatedAt) > 10*time.Minute {
+				if now.Sub(sess.CreatedAt) > 24*time.Hour {
 					delete(s.sessions, id)
 				}
 			}
@@ -72,6 +72,7 @@ func main() {
 			return
 		}
 		var req struct {
+			UUID  string `json:"uuid"`
 			Offer string `json:"offer"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Offer == "" {
@@ -79,7 +80,11 @@ func main() {
 			return
 		}
 
-		uuid := generateUUID()
+		uuid := strings.TrimSpace(req.UUID)
+		if uuid == "" {
+			uuid = generateUUID()
+		}
+
 		sess := &Session{
 			UUID:      uuid,
 			Offer:     req.Offer,

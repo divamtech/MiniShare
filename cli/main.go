@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"compress/flate"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -16,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,32 +28,62 @@ import (
 )
 
 // -------------------------------------------------------------------
-// CONFIGURATION MANAGER (~/.minishare/config.json)
+// CONFIGURATION MANAGER & CROSS-PLATFORM STORAGE
 // -------------------------------------------------------------------
 const DefaultServerURL = "http://localhost:8080"
 
 type Config struct {
-	ServerURL string `json:"server_url"`
+	CustomConfigPath string    `json:"custom_config_path,omitempty"`
+	ServerURL        string    `json:"server_url"`
+	PersistentUUID   string    `json:"persistent_uuid,omitempty"`
+	UUIDExpiresAt    time.Time `json:"uuid_expires_at,omitempty"`
 }
 
-func getConfigPath() (string, error) {
+func getDefaultConfigPath() string {
+	configDir, err := os.UserConfigDir()
+	if err == nil && configDir != "" {
+		dir := filepath.Join(configDir, "minishare")
+		_ = os.MkdirAll(dir, 0755)
+		return filepath.Join(dir, "config.json")
+	}
+
 	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	if err == nil && homeDir != "" {
+		dir := filepath.Join(homeDir, ".minishare")
+		_ = os.MkdirAll(dir, 0755)
+		return filepath.Join(dir, "config.json")
 	}
-	configDir := filepath.Join(homeDir, ".minishare")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return "", err
+
+	return "minishare_config.json"
+}
+
+func getPathPointerFile() string {
+	homeDir, err := os.UserHomeDir()
+	if err == nil && homeDir != "" {
+		return filepath.Join(homeDir, ".minishare_path")
 	}
-	return filepath.Join(configDir, "config.json"), nil
+	return ".minishare_path"
+}
+
+func GetConfigPath() string {
+	if envPath := os.Getenv("MINISHARE_CONFIG"); envPath != "" {
+		return envPath
+	}
+
+	if pointerFile := getPathPointerFile(); pointerFile != "" {
+		if data, err := os.ReadFile(pointerFile); err == nil {
+			customPath := strings.TrimSpace(string(data))
+			if customPath != "" {
+				return customPath
+			}
+		}
+	}
+
+	return getDefaultConfigPath()
 }
 
 func LoadConfig() *Config {
-	path, err := getConfigPath()
-	if err != nil {
-		return &Config{ServerURL: DefaultServerURL}
-	}
-
+	path := GetConfigPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return &Config{ServerURL: DefaultServerURL}
@@ -65,8 +97,9 @@ func LoadConfig() *Config {
 }
 
 func SaveConfig(cfg *Config) error {
-	path, err := getConfigPath()
-	if err != nil {
+	path := GetConfigPath()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(cfg, "", "  ")
@@ -74,6 +107,212 @@ func SaveConfig(cfg *Config) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+func getDaemonPIDPath() string {
+	dir := filepath.Dir(GetConfigPath())
+	return filepath.Join(dir, "daemon.pid")
+}
+
+func getDaemonUUIDPath() string {
+	dir := filepath.Dir(GetConfigPath())
+	return filepath.Join(dir, "daemon.uuid")
+}
+
+func getDaemonLogPath() string {
+	dir := filepath.Dir(GetConfigPath())
+	return filepath.Join(dir, "daemon.log")
+}
+
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
+func parseDurationStr(s string) (time.Time, bool, error) {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "never" || s == "permanent" || s == "0" || s == "infinite" {
+		return time.Time{}, true, nil
+	}
+
+	now := time.Now()
+
+	if strings.HasSuffix(s, "y") {
+		numStr := strings.TrimSuffix(s, "y")
+		years, err := strconv.Atoi(numStr)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		return now.AddDate(years, 0, 0), false, nil
+	}
+
+	if strings.HasSuffix(s, "mo") {
+		numStr := strings.TrimSuffix(s, "mo")
+		months, err := strconv.Atoi(numStr)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		return now.AddDate(0, months, 0), false, nil
+	}
+
+	if strings.HasSuffix(s, "d") {
+		numStr := strings.TrimSuffix(s, "d")
+		days, err := strconv.Atoi(numStr)
+		if err != nil {
+			return time.Time{}, false, err
+		}
+		return now.AddDate(0, 0, days), false, nil
+	}
+
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return now.Add(d), false, nil
+}
+
+// -------------------------------------------------------------------
+// RESET COMMAND HANDLERS
+// -------------------------------------------------------------------
+func HandleResetCommand(args []string) {
+	target := "all"
+	if len(args) > 0 {
+		target = strings.ToLower(strings.TrimSpace(args[0]))
+	}
+
+	switch target {
+	case "default", "all":
+		_ = os.Remove(getPathPointerFile())
+		cfg := &Config{
+			ServerURL:      DefaultServerURL,
+			PersistentUUID: "",
+			UUIDExpiresAt:  time.Time{},
+		}
+		if err := SaveConfig(cfg); err != nil {
+			fmt.Printf("❌ Failed to reset configurations: %v\n", err)
+			return
+		}
+		fmt.Println("🔄 [MiniShare] All configurations reset to default values.")
+		fmt.Printf("   🌐 Server URL: %s\n", DefaultServerURL)
+		fmt.Println("   🔑 Persistent UUID: Cleared (fresh UUID per session)")
+		fmt.Printf("   📄 Config Path: %s\n", getDefaultConfigPath())
+
+	case "server":
+		cfg := LoadConfig()
+		cfg.ServerURL = DefaultServerURL
+		_ = SaveConfig(cfg)
+		fmt.Printf("[MiniShare] Signaling server reset to default: %s\n", DefaultServerURL)
+
+	case "uuid":
+		cfg := LoadConfig()
+		cfg.PersistentUUID = ""
+		cfg.UUIDExpiresAt = time.Time{}
+		_ = SaveConfig(cfg)
+		fmt.Println("🔑 [MiniShare] Persistent UUID configuration reset to default.")
+
+	case "share":
+		cfg := LoadConfig()
+		cfg.UUIDExpiresAt = time.Time{}
+		_ = SaveConfig(cfg)
+		fmt.Println("🔑 [MiniShare] Share duration reset (UUID expiration cleared).")
+
+	case "path", "filepath":
+		_ = os.Remove(getPathPointerFile())
+		fmt.Printf("📄 Config file path reset to OS default: %s\n", getDefaultConfigPath())
+
+	default:
+		fmt.Printf("Unknown reset target '%s'. Available: default, all, server, uuid, share, path\n", target)
+	}
+}
+
+// -------------------------------------------------------------------
+// CONFIG & PATH COMMAND HANDLERS
+// -------------------------------------------------------------------
+func HandlePathCommand(args []string) {
+	if len(args) == 0 {
+		fmt.Printf("📄 Active Config Path: %s\n", GetConfigPath())
+		return
+	}
+
+	targetPath := args[0]
+	pointerFile := getPathPointerFile()
+
+	if strings.ToLower(targetPath) == "reset" || strings.ToLower(targetPath) == "default" {
+		HandleResetCommand([]string{"path"})
+		return
+	}
+
+	absPath, err := filepath.Abs(targetPath)
+	if err != nil {
+		absPath = targetPath
+	}
+
+	if err := os.WriteFile(pointerFile, []byte(absPath), 0644); err != nil {
+		fmt.Printf("❌ Failed to set custom config path: %v\n", err)
+		return
+	}
+
+	cfg := LoadConfig()
+	_ = SaveConfig(cfg)
+	fmt.Printf("📄 Custom config file path set to: %s\n", absPath)
+}
+
+func HandleConfigCommand(args []string) {
+	if len(args) == 0 {
+		cfg := LoadConfig()
+		path := GetConfigPath()
+		fmt.Println("⚡ MiniShare Active Configuration:")
+		fmt.Printf("  📄 Config File Path: %s\n", path)
+		fmt.Printf("  🌐 Signaling Server: %s\n", cfg.ServerURL)
+		if cfg.PersistentUUID == "" {
+			fmt.Println("  🔑 Persistent UUID: None (Generates fresh UUID per session)")
+		} else if cfg.UUIDExpiresAt.IsZero() {
+			fmt.Printf("  🔑 Persistent UUID: %s (Never expires)\n", cfg.PersistentUUID)
+		} else if time.Now().After(cfg.UUIDExpiresAt) {
+			fmt.Printf("  🔑 Persistent UUID: %s (Expired at %s)\n", cfg.PersistentUUID, cfg.UUIDExpiresAt.Format(time.RFC1123))
+		} else {
+			fmt.Printf("  🔑 Persistent UUID: %s (Expires: %s)\n", cfg.PersistentUUID, cfg.UUIDExpiresAt.Format(time.RFC1123))
+		}
+		return
+	}
+
+	subCmd := strings.ToLower(args[0])
+	if subCmd == "reset" {
+		HandleResetCommand(args[1:])
+		return
+	}
+
+	HandlePathCommand(args)
+}
+
+func HandleSetCommand(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage:")
+		fmt.Println("  minishare set server <url>")
+		fmt.Println("  minishare set uuid <uuid>")
+		fmt.Println("  minishare set share <1h|2mo|never>")
+		fmt.Println("  minishare set path <file-path>")
+		return
+	}
+
+	setting := strings.ToLower(args[0])
+	valArgs := args[1:]
+
+	switch setting {
+	case "server":
+		HandleServerConfig(valArgs)
+	case "uuid":
+		HandleUUIDConfig(valArgs)
+	case "share":
+		HandleShareConfig(valArgs)
+	case "path", "filepath":
+		HandlePathCommand(valArgs)
+	default:
+		fmt.Printf("Unknown setting '%s'. Available: server, uuid, share, path\n", setting)
+	}
 }
 
 func HandleServerConfig(args []string) {
@@ -87,12 +326,7 @@ func HandleServerConfig(args []string) {
 	inputLower := strings.ToLower(input)
 
 	if inputLower == "reset" || inputLower == "default" || inputLower == "null" || inputLower == "empty" {
-		cfg := &Config{ServerURL: DefaultServerURL}
-		if err := SaveConfig(cfg); err != nil {
-			fmt.Printf("❌ Failed to save config: %v\n", err)
-			return
-		}
-		fmt.Printf("[MiniShare] Signaling server reset to default: %s\n", DefaultServerURL)
+		HandleResetCommand([]string{"server"})
 		return
 	}
 
@@ -101,7 +335,8 @@ func HandleServerConfig(args []string) {
 		url = "http://" + url
 	}
 
-	cfg := &Config{ServerURL: url}
+	cfg := LoadConfig()
+	cfg.ServerURL = url
 	if err := SaveConfig(cfg); err != nil {
 		fmt.Printf("❌ Failed to save config: %v\n", err)
 		return
@@ -109,33 +344,317 @@ func HandleServerConfig(args []string) {
 	fmt.Printf("[MiniShare] Signaling server set to: %s\n", url)
 }
 
+func HandleUUIDConfig(args []string) {
+	if len(args) == 0 {
+		cfg := LoadConfig()
+		if cfg.PersistentUUID == "" {
+			fmt.Println("🔑 [MiniShare] No persistent UUID configured.")
+		} else {
+			fmt.Printf("🔑 [MiniShare] Active Persistent UUID: %s\n", cfg.PersistentUUID)
+		}
+		return
+	}
+
+	input := strings.TrimSpace(args[0])
+	if strings.ToLower(input) == "reset" || strings.ToLower(input) == "clear" {
+		HandleResetCommand([]string{"uuid"})
+		return
+	}
+
+	cfg := LoadConfig()
+	cfg.PersistentUUID = input
+	cfg.UUIDExpiresAt = time.Time{}
+	if err := SaveConfig(cfg); err != nil {
+		fmt.Printf("❌ Failed to save config: %v\n", err)
+		return
+	}
+	fmt.Printf("🔑 [MiniShare] Persistent UUID set to: %s (Never expires)\n", input)
+}
+
+func HandleShareConfig(args []string) {
+	if len(args) == 0 {
+		cfg := LoadConfig()
+		if cfg.PersistentUUID == "" {
+			fmt.Println("[MiniShare] No persistent UUID configured (generates fresh UUID per session).")
+		} else if cfg.UUIDExpiresAt.IsZero() {
+			fmt.Printf("[MiniShare] Fixed Persistent UUID: %s (Never expires)\n", cfg.PersistentUUID)
+		} else if time.Now().After(cfg.UUIDExpiresAt) {
+			fmt.Printf("[MiniShare] Persistent UUID %s HAS EXPIRED at %s.\n", cfg.PersistentUUID, cfg.UUIDExpiresAt.Format(time.RFC1123))
+		} else {
+			fmt.Printf("[MiniShare] Persistent UUID: %s (Expires: %s)\n", cfg.PersistentUUID, cfg.UUIDExpiresAt.Format(time.RFC1123))
+		}
+		return
+	}
+
+	var customUUID string
+	var durationStr string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		argLower := strings.ToLower(arg)
+
+		if (argLower == "uuid" || argLower == "set") && i+1 < len(args) {
+			customUUID = args[i+1]
+			i++
+			continue
+		}
+
+		if argLower == "reset" || argLower == "clear" {
+			HandleResetCommand([]string{"share"})
+			return
+		}
+
+		if durationStr == "" {
+			durationStr = arg
+		}
+	}
+
+	cfg := LoadConfig()
+	if customUUID != "" {
+		cfg.PersistentUUID = customUUID
+	} else if cfg.PersistentUUID == "" {
+		cfg.PersistentUUID = generateUUID()
+	}
+
+	if durationStr != "" {
+		expiry, neverExpires, err := parseDurationStr(durationStr)
+		if err == nil {
+			if neverExpires {
+				cfg.UUIDExpiresAt = time.Time{}
+			} else {
+				cfg.UUIDExpiresAt = expiry
+			}
+		} else if customUUID == "" {
+			cfg.PersistentUUID = durationStr
+			cfg.UUIDExpiresAt = time.Time{}
+		}
+	}
+
+	_ = SaveConfig(cfg)
+
+	if cfg.UUIDExpiresAt.IsZero() {
+		fmt.Printf("🔑 [MiniShare] Persistent UUID configured: %s (Never expires)\n", cfg.PersistentUUID)
+	} else {
+		fmt.Printf("🔑 [MiniShare] Persistent UUID configured: %s (Valid until %s)\n", cfg.PersistentUUID, cfg.UUIDExpiresAt.Format(time.RFC1123))
+	}
+}
+
+// -------------------------------------------------------------------
+// DAEMON MANAGEMENT (-d, --daemon, kill -d, daemon status)
+// -------------------------------------------------------------------
+func launchDaemonProcess() {
+	pidPath := getDaemonPIDPath()
+	uuidPath := getDaemonUUIDPath()
+	logPath := getDaemonLogPath()
+	cfg := LoadConfig()
+
+	if data, err := os.ReadFile(pidPath); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil {
+			if processExists(pid) {
+				daemonUUID := ""
+				if uData, err := os.ReadFile(uuidPath); err == nil {
+					daemonUUID = strings.TrimSpace(string(uData))
+				}
+				printDaemonStatusInfo(pid, daemonUUID, cfg.ServerURL, logPath, true)
+				return
+			}
+		}
+	}
+
+	sessionUUID := cfg.PersistentUUID
+	if sessionUUID == "" || (!cfg.UUIDExpiresAt.IsZero() && time.Now().After(cfg.UUIDExpiresAt)) {
+		sessionUUID = generateUUID()
+	}
+
+	_ = os.WriteFile(uuidPath, []byte(sessionUUID), 0644)
+
+	args := []string{}
+	for _, arg := range os.Args[1:] {
+		if arg != "-d" && arg != "--daemon" {
+			args = append(args, arg)
+		}
+	}
+
+	cmd := exec.Command(os.Args[0], args...)
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Fatalf("failed to open daemon log file: %v", err)
+	}
+
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+
+	if err := cmd.Start(); err != nil {
+		log.Fatalf("failed to start background daemon: %v", err)
+	}
+
+	_ = os.WriteFile(pidPath, []byte(strconv.Itoa(cmd.Process.Pid)), 0644)
+
+	fmt.Println("⚡ MiniShare Host launched in background daemon mode")
+	printDaemonStatusInfo(cmd.Process.Pid, sessionUUID, cfg.ServerURL, logPath, false)
+}
+
+func printDaemonStatusInfo(pid int, uuid string, serverURL string, logPath string, alreadyRunning bool) {
+	serverURL = strings.TrimSuffix(serverURL, "/")
+	if alreadyRunning {
+		fmt.Printf("⚠️ MiniShare background daemon is already running (PID: %d)\n", pid)
+	}
+	fmt.Printf("🆔 Daemon PID:  %d\n", pid)
+	if uuid != "" {
+		fmt.Printf("🔑 Session UUID: %s\n", uuid)
+		fmt.Printf("💻 CLI Connect: minishare connect %s\n", uuid)
+		fmt.Printf("🌐 Web Connect: %s/app/%s\n", serverURL, uuid)
+	}
+	fmt.Printf("📄 Log File:    %s\n", logPath)
+	fmt.Println("🛑 Stop Daemon: minishare kill -d")
+}
+
+func showDaemonStatus() {
+	pidPath := getDaemonPIDPath()
+	uuidPath := getDaemonUUIDPath()
+	logPath := getDaemonLogPath()
+	cfg := LoadConfig()
+
+	if data, err := os.ReadFile(pidPath); err == nil {
+		if pid, err := strconv.Atoi(strings.TrimSpace(string(data))); err == nil && processExists(pid) {
+			daemonUUID := ""
+			if uData, err := os.ReadFile(uuidPath); err == nil {
+				daemonUUID = strings.TrimSpace(string(uData))
+			}
+			fmt.Println("⚡ MiniShare Background Daemon: RUNNING")
+			printDaemonStatusInfo(pid, daemonUUID, cfg.ServerURL, logPath, false)
+			return
+		}
+	}
+	fmt.Println("🔴 MiniShare background daemon is NOT running.")
+}
+
+func stopDaemonProcess() {
+	pidPath := getDaemonPIDPath()
+	uuidPath := getDaemonUUIDPath()
+
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		fmt.Println("⚠️ No active MiniShare background daemon found.")
+		return
+	}
+
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		_ = os.Remove(pidPath)
+		_ = os.Remove(uuidPath)
+		fmt.Println("⚠️ Invalid daemon PID file removed.")
+		return
+	}
+
+	if !processExists(pid) {
+		_ = os.Remove(pidPath)
+		_ = os.Remove(uuidPath)
+		fmt.Printf("⚠️ Process PID %d is not running. PID file cleaned up.\n", pid)
+		return
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err == nil {
+		_ = proc.Signal(syscall.SIGTERM)
+		time.Sleep(200 * time.Millisecond)
+		if processExists(pid) {
+			_ = proc.Kill()
+		}
+	}
+
+	_ = os.Remove(pidPath)
+	_ = os.Remove(uuidPath)
+	fmt.Printf("🛑 MiniShare background daemon stopped (PID: %d).\n", pid)
+}
+
+func processExists(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = proc.Signal(syscall.Signal(0))
+	return err == nil
+}
+
 // -------------------------------------------------------------------
 // MAIN CLI ENTRYPOINT
 // -------------------------------------------------------------------
 func main() {
 	if len(os.Args) > 1 {
-		cmd := strings.ToLower(os.Args[1])
+		cmd1 := strings.ToLower(os.Args[1])
 
-		if cmd == "server" {
+		// Reset commands: minishare reset [default|all|server|uuid|share|path]
+		if cmd1 == "reset" {
+			HandleResetCommand(os.Args[2:])
+			return
+		}
+
+		// Stop daemon command: minishare kill -d or minishare daemon stop
+		if (cmd1 == "kill" && len(os.Args) > 2 && os.Args[2] == "-d") ||
+			(cmd1 == "daemon" && len(os.Args) > 2 && (os.Args[2] == "stop" || os.Args[2] == "kill")) {
+			stopDaemonProcess()
+			return
+		}
+
+		// Daemon status command: minishare daemon status
+		if cmd1 == "daemon" && len(os.Args) > 2 && os.Args[2] == "status" {
+			showDaemonStatus()
+			return
+		}
+
+		// Pure configuration setting commands (DO NOT launch host session)
+		if cmd1 == "config" {
+			HandleConfigCommand(os.Args[2:])
+			return
+		}
+
+		if cmd1 == "set" {
+			HandleSetCommand(os.Args[2:])
+			return
+		}
+
+		if cmd1 == "server" {
 			HandleServerConfig(os.Args[2:])
 			return
 		}
 
-		if cmd == "connect" {
+		if cmd1 == "share" {
+			HandleShareConfig(os.Args[2:])
+			return
+		}
+
+		if cmd1 == "uuid" {
+			HandleUUIDConfig(os.Args[2:])
+			return
+		}
+
+		// Viewer connection command
+		if cmd1 == "connect" || cmd1 == "-c" || cmd1 == "c" {
 			if len(os.Args) < 3 {
-				fmt.Println("Usage: minishare connect <session-uuid>")
+				fmt.Println("Usage: minishare connect|-c|c <session-uuid>")
 				os.Exit(1)
 			}
 			runViewer(os.Args[2])
 			return
 		}
 
-		if cmd == "--help" || cmd == "-h" || cmd == "help" {
+		if cmd1 == "--help" || cmd1 == "-h" || cmd1 == "help" {
 			printHelp()
 			return
 		}
 	}
 
+	// Daemon mode flag for starting host session in background: minishare -d
+	for _, arg := range os.Args[1:] {
+		if arg == "-d" || arg == "--daemon" {
+			launchDaemonProcess()
+			return
+		}
+	}
+
+	// Default action: Start Host session live
 	runHost()
 }
 
@@ -143,11 +662,27 @@ func printHelp() {
 	fmt.Println(`MiniShare CLI ⚡ - Real-time P2P Terminal Sharing
 
 Usage:
-  minishare                         Start Host session (creates session UUID)
-  minishare connect <session-uuid>   Connect to a remote Host session
-  minishare server <url>            Set custom signaling server URL
-  minishare server reset            Reset signaling server to default
-  minishare --manual                Run Host in manual copy-paste mode`)
+  minishare                            Start Host session (fresh UUID by default)
+  minishare -d                         Start Host session in background daemon mode
+  minishare daemon status              Check background daemon status and UUID
+  minishare kill -d                    Stop running background daemon process
+  minishare connect|-c|c <session-uuid> Connect to a remote Host session
+
+Configuration Management:
+  minishare config                     View active settings & config file location
+
+Set Options:
+  minishare set server <url>           Set signaling server URL
+  minishare set uuid <uuid>            Set fixed persistent UUID
+  minishare set share <1h|2mo|never>   Set UUID duration (1h, 30m, 2d, 2mo, 4y, never)
+  minishare set path <file-path>       Set custom config file path
+
+Reset Commands:
+  minishare reset                      Reset all settings to default (alias: reset default, reset all)
+  minishare reset server               Reset signaling server URL to default
+  minishare reset uuid                 Reset persistent UUID to default
+  minishare reset share                Reset UUID duration / expiration setting
+  minishare reset path                 Reset config file path to default OS location`)
 }
 
 // -------------------------------------------------------------------
@@ -160,6 +695,13 @@ func runHost() {
 
 	manualFlag := flag.Bool("manual", false, "Run in manual copy-paste mode")
 	flag.CommandLine.Parse(os.Args[1:])
+
+	var sessionUUID string
+	if cfg.PersistentUUID != "" {
+		if cfg.UUIDExpiresAt.IsZero() || time.Now().Before(cfg.UUIDExpiresAt) {
+			sessionUUID = cfg.PersistentUUID
+		}
+	}
 
 	shell := os.Getenv("SHELL")
 	if shell == "" {
@@ -187,7 +729,6 @@ func runHost() {
 		log.Fatalf("failed to create data channel: %v", err)
 	}
 
-	// Handle graceful SIGINT/SIGTERM shutdown to notify remote peers instantly
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -292,7 +833,14 @@ func runHost() {
 	}
 
 	serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
-	resp, err := postJSON(serverURL+"/api/session", map[string]string{"offer": offerCode})
+	payload := map[string]string{
+		"offer": offerCode,
+	}
+	if sessionUUID != "" {
+		payload["uuid"] = sessionUUID
+	}
+
+	resp, err := postJSON(serverURL+"/api/session", payload)
 	if err != nil {
 		fmt.Printf("⚠️ Signaling server unavailable (%v). Falling back to manual mode...\n", err)
 		runManualHost(pc, offerCode, done)
@@ -310,7 +858,7 @@ func runHost() {
 		return
 	}
 
-	webLink := fmt.Sprintf("%s/#%s", serverURL, sessResp.UUID)
+	webLink := fmt.Sprintf("%s/app/%s", serverURL, sessResp.UUID)
 	fmt.Println("\n⚡ MiniShare Host Session Live")
 	fmt.Printf("🔑 Session UUID: %s\n", sessResp.UUID)
 	fmt.Printf("💻 Connect via CLI: minishare connect %s\n", sessResp.UUID)
@@ -411,7 +959,6 @@ func runViewer(uuid string) {
 	connected := make(chan struct{})
 	done := make(chan struct{})
 
-	// Handle graceful SIGINT/SIGTERM shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -616,7 +1163,7 @@ func copyToClipboard(text string) bool {
 	} else {
 		return false
 	}
-	cmd.Stdin = strings.NewReader(text)
+	cmd.Stdin = strings.NewReader(strings.TrimSpace(text))
 	return cmd.Run() == nil
 }
 

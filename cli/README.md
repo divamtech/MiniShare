@@ -19,70 +19,67 @@ The official command-line tool for **MiniShare** — real-time P2P terminal shar
    go build -o minishare main.go
    ```
 
-*(Optional) Move the compiled binary to your PATH:*
-```bash
-sudo mv minishare /usr/local/bin/
-```
+---
+
+## Commands & Clean Syntax
+
+### 1. Host Commands (Foreground or Background Daemon `-d`)
+
+- **Start Host Session** (fresh UUID per session):
+  ```bash
+  minishare
+  ```
+
+- **Start Host Session in Background Daemon Mode**:
+  ```bash
+  minishare -d
+  ```
+
+- **Start Host Session with Custom UUID in Background**:
+  ```bash
+  minishare uuid team-room -d
+  ```
+
+- **Check Daemon Status & Active UUID**:
+  ```bash
+  minishare daemon status
+  ```
+
+- **Stop Running Background Daemon**:
+  ```bash
+  minishare kill -d
+  ```
 
 ---
 
-## Running without Building
+### 2. Viewer Command
 
-You can also run directly using Go:
-```bash
-go run main.go
-```
-
----
-
-## Commands
-
-### 1. Start Host Session
-Share your terminal shell with a remote peer:
-```bash
-./minishare
-# Or: go run main.go
-```
-Output:
-```text
-[MiniShare] Connecting to signaling server: http://localhost:8080
-
-⚡ MiniShare Host Session Live
-🔑 Session UUID: 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-💻 Connect via CLI: minishare connect 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-🌐 Connect via Web Browser: http://localhost:8080/#7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-👉 Session UUID copied to clipboard automatically!
-```
+- **Connect to Remote Host Session**:
+  ```bash
+  minishare connect <session-uuid>
+  # Aliases: minishare -c <session-uuid> or minishare c <session-uuid>
+  ```
+  *(Press `Ctrl+]` or type `exit` to detach at any time)*
 
 ---
 
-### 2. Connect as Viewer
-Connect to a remote host using its session UUID:
-```bash
-./minishare connect 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-# Or: go run main.go connect 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-```
-*(Press `Ctrl+]` or type `exit` to detach from the remote shell at any time)*
+### 3. Symmetric `set` & `reset` Configuration Commands
+
+`set <property> <value>` matches 1-to-1 with `reset <property>`:
+
+| Target Property | Set Command | Reset Command |
+| :--- | :--- | :--- |
+| **Signaling Server** | `minishare set server <url>` | `minishare reset server` |
+| **Persistent UUID** | `minishare set uuid <uuid>` | `minishare reset uuid` |
+| **UUID Duration** | `minishare set share <1h\|2mo>` | `minishare reset share` |
+| **Config File Path** | `minishare set path <file-path>` | `minishare reset path` |
+| **ALL Settings** | — | `minishare reset` *(or `reset default` / `reset all`)* |
 
 ---
 
-### 3. Server Configuration
+### 4. Configuration Overview (`config`)
 
-Set a custom signaling server URL:
-```bash
-./minishare server http://localhost:8080
-```
-
-Reset back to the default signaling server URL:
-```bash
-./minishare server reset
-```
-*(Also accepts `default`, `null`, `empty`, or blank)*
-
----
-
-### 4. Manual Fallback Mode
-Run without a signaling server (manual copy-paste mode):
-```bash
-./minishare --manual
-```
+- **View Active Settings & Config File Location**:
+  ```bash
+  minishare config
+  ```

@@ -44,61 +44,58 @@ cd cli
 go mod tidy
 go build -o minishare main.go
 ```
-*(Or run directly with `go run main.go`)*
 
 ---
 
-### 2. Configure Signaling Server (Optional)
+### 2. Start Host Session
 
-By default, MiniShare CLI connects to `http://localhost:8080`.
-
-- **Set a custom signaling server**:
+- **Standard Host Mode** (fresh UUID by default for safe use):
   ```bash
-  ./minishare server http://localhost:8080
-  # [MiniShare] Signaling server set to: http://localhost:8080
+  ./minishare
   ```
 
-- **Reset to default signaling server**:
+- **Background Daemon Mode (`-d`)**:
   ```bash
-  ./minishare server reset
-  # [MiniShare] Signaling server reset to default: http://localhost:8080
+  ./minishare -d                        # Run Host in background
+  ./minishare uuid team-room -d         # Custom UUID + background daemon
+  ./minishare daemon status             # Check daemon status & Session UUID
+  ./minishare kill -d                   # Stop background daemon
+  ```
+
+- **Persistent / Duration-based UUID (`share` / `uuid`)**:
+  ```bash
+  ./minishare set share 1h              # Persistent for 1 hour
+  ./minishare set share 2mo             # Persistent for 2 months
+  ./minishare set share 4y              # Persistent for 4 years
+  ./minishare set uuid team-room        # Fixed UUID permanently
   ```
 
 ---
 
-### 3. Start Host Session (Computer A)
+### 3. Symmetric Configuration Management (`set` & `reset`)
 
-```bash
-./minishare
-```
-
-Output:
-```text
-[MiniShare] Connecting to signaling server: http://localhost:8080
-
-⚡ MiniShare Host Session Live
-🔑 Session UUID: 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-💻 Connect via CLI: minishare connect 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-🌐 Connect via Web Browser: http://localhost:8080/#7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-👉 Session UUID copied to clipboard automatically!
-```
+| Target Property | Set Command | Reset Command |
+| :--- | :--- | :--- |
+| **Signaling Server** | `./minishare set server <url>` | `./minishare reset server` |
+| **Persistent UUID** | `./minishare set uuid <uuid>` | `./minishare reset uuid` |
+| **UUID Duration** | `./minishare set share <1h\|2mo>` | `./minishare reset share` |
+| **Config File Path** | `./minishare set path <file-path>` | `./minishare reset path` |
+| **ALL Settings** | — | `./minishare reset` *(or `reset default` / `reset all`)* |
 
 ---
 
-### 4. Connect as Viewer (Computer B)
+### 4. Connect as Viewer
 
-#### Option A: CLI Viewer (Computer B)
+#### Option A: CLI Viewer
 ```bash
-./minishare connect 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
+./minishare connect <session-uuid>
+# Aliases: ./minishare -c <session-uuid> or ./minishare c <session-uuid>
 ```
 *(Press `Ctrl+]` or type `exit` to detach at any time)*
 
 #### Option B: Web Browser Viewer (Zero Installation Required!)
-Open the Web Link in Chrome, Safari, or Firefox:
-```text
-http://localhost:8080/#7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
-```
-An interactive terminal renders directly inside your browser window using `xterm.js` connected live to Computer A via WebRTC P2P!
+Open `http://localhost:8080/app/<session-uuid>` in Chrome, Safari, or Firefox.
+An interactive terminal renders directly inside your browser window using `xterm.js` connected live to the Host via WebRTC P2P!
 
 ---
 

@@ -37,6 +37,8 @@ type Config struct {
 	ServerURL        string    `json:"server_url"`
 	PersistentUUID   string    `json:"persistent_uuid,omitempty"`
 	UUIDExpiresAt    time.Time `json:"uuid_expires_at,omitempty"`
+	BlockedCommands  []string  `json:"blocked_commands,omitempty"`
+	BlockedFolders   []string  `json:"blocked_folders,omitempty"`
 }
 
 func getDefaultConfigPath() string {
@@ -187,9 +189,11 @@ func HandleResetCommand(args []string) {
 	case "default", "all":
 		_ = os.Remove(getPathPointerFile())
 		cfg := &Config{
-			ServerURL:      DefaultServerURL,
-			PersistentUUID: "",
-			UUIDExpiresAt:  time.Time{},
+			ServerURL:       DefaultServerURL,
+			PersistentUUID:  "",
+			UUIDExpiresAt:   time.Time{},
+			BlockedCommands: nil,
+			BlockedFolders:  nil,
 		}
 		if err := SaveConfig(cfg); err != nil {
 			fmt.Printf("❌ Failed to reset configurations: %v\n", err)
@@ -198,6 +202,8 @@ func HandleResetCommand(args []string) {
 		fmt.Println("🔄 [MiniShare] All configurations reset to default values.")
 		fmt.Printf("   🌐 Server URL: %s\n", DefaultServerURL)
 		fmt.Println("   🔑 Persistent UUID: Cleared (fresh UUID per session)")
+		fmt.Println("   🔒 Blocked Commands: Cleared")
+		fmt.Println("   📁 Blocked Folders: Cleared")
 		fmt.Printf("   📄 Config Path: %s\n", getDefaultConfigPath())
 
 	case "server":
@@ -223,8 +229,194 @@ func HandleResetCommand(args []string) {
 		_ = os.Remove(getPathPointerFile())
 		fmt.Printf("📄 Config file path reset to OS default: %s\n", getDefaultConfigPath())
 
+	case "block":
+		cfg := LoadConfig()
+		cfg.BlockedCommands = nil
+		cfg.BlockedFolders = nil
+		_ = SaveConfig(cfg)
+		fmt.Println("🔓 [MiniShare] All blocked commands and folders cleared.")
+
 	default:
-		fmt.Printf("Unknown reset target '%s'. Available: default, all, server, uuid, share, path\n", target)
+		fmt.Printf("Unknown reset target '%s'. Available: default, all, server, uuid, share, path, block\n", target)
+	}
+}
+
+// -------------------------------------------------------------------
+// BLOCK / UNBLOCK COMMAND HANDLERS
+// -------------------------------------------------------------------
+func parseBlockArgs(args []string) []string {
+	var items []string
+	for _, arg := range args {
+		for _, part := range strings.Split(arg, ",") {
+			p := strings.TrimSpace(part)
+			if p != "" {
+				items = append(items, p)
+			}
+		}
+	}
+	return items
+}
+
+func HandleBlockCommand(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage:")
+		fmt.Println("  minishare block cmd <cmd1> [cmd2] ...         Block commands (comma or space separated)")
+		fmt.Println("  minishare block dir|folder <path1> [path2] ... Block folder access (comma or space separated)")
+		return
+	}
+
+	target := strings.ToLower(args[0])
+	valArgs := args[1:]
+
+	if len(valArgs) == 0 {
+		cfg := LoadConfig()
+		switch target {
+		case "cmd", "command":
+			if len(cfg.BlockedCommands) == 0 {
+				fmt.Println("🔒 [MiniShare] No commands are blocked.")
+			} else {
+				fmt.Printf("🔒 [MiniShare] Blocked commands: %s\n", strings.Join(cfg.BlockedCommands, ", "))
+			}
+		case "dir", "folder":
+			if len(cfg.BlockedFolders) == 0 {
+				fmt.Println("📁 [MiniShare] No folders are blocked.")
+			} else {
+				fmt.Printf("📁 [MiniShare] Blocked folders: %s\n", strings.Join(cfg.BlockedFolders, ", "))
+			}
+		default:
+			fmt.Printf("Unknown block target '%s'. Use 'cmd' or 'dir/folder'.\n", target)
+		}
+		return
+	}
+
+	newItems := parseBlockArgs(valArgs)
+	cfg := LoadConfig()
+
+	switch target {
+	case "cmd", "command":
+		for _, item := range newItems {
+			lowerItem := strings.ToLower(item)
+			found := false
+			for _, existing := range cfg.BlockedCommands {
+				if strings.ToLower(existing) == lowerItem {
+					found = true
+					break
+				}
+			}
+			if !found {
+				cfg.BlockedCommands = append(cfg.BlockedCommands, lowerItem)
+			}
+		}
+		if err := SaveConfig(cfg); err != nil {
+			fmt.Printf("❌ Failed to save blocked commands: %v\n", err)
+		} else {
+			fmt.Printf("🔒 [MiniShare] Blocked commands updated: %s\n", strings.Join(cfg.BlockedCommands, ", "))
+		}
+
+	case "dir", "folder":
+		for _, item := range newItems {
+			absPath, err := filepath.Abs(item)
+			if err != nil {
+				absPath = item
+			}
+			found := false
+			for _, existing := range cfg.BlockedFolders {
+				if existing == absPath {
+					found = true
+					break
+				}
+			}
+			if !found {
+				cfg.BlockedFolders = append(cfg.BlockedFolders, absPath)
+			}
+		}
+		if err := SaveConfig(cfg); err != nil {
+			fmt.Printf("❌ Failed to save blocked folders: %v\n", err)
+		} else {
+			fmt.Printf("📁 [MiniShare] Blocked folders updated: %s\n", strings.Join(cfg.BlockedFolders, ", "))
+		}
+
+	default:
+		fmt.Printf("Unknown block target '%s'. Use 'cmd' or 'dir/folder'.\n", target)
+	}
+}
+
+func HandleUnblockCommand(args []string) {
+	if len(args) == 0 {
+		fmt.Println("Usage:")
+		fmt.Println("  minishare unblock cmd <cmd1> [cmd2] ...         Unblock specific commands")
+		fmt.Println("  minishare unblock dir|folder <path1> [path2] ... Unblock specific folders")
+		return
+	}
+
+	target := strings.ToLower(args[0])
+	valArgs := args[1:]
+
+	if len(valArgs) == 0 {
+		fmt.Printf("Please specify items to unblock. Example: minishare unblock %s <item1> [item2]\n", target)
+		return
+	}
+
+	removeItems := parseBlockArgs(valArgs)
+	cfg := LoadConfig()
+
+	switch target {
+	case "cmd", "command":
+		var remaining []string
+		for _, existing := range cfg.BlockedCommands {
+			keep := true
+			for _, rm := range removeItems {
+				if strings.ToLower(existing) == strings.ToLower(rm) {
+					keep = false
+					break
+				}
+			}
+			if keep {
+				remaining = append(remaining, existing)
+			}
+		}
+		cfg.BlockedCommands = remaining
+		if err := SaveConfig(cfg); err != nil {
+			fmt.Printf("❌ Failed to save config: %v\n", err)
+		} else {
+			if len(remaining) == 0 {
+				fmt.Println("🔓 [MiniShare] All commands unblocked.")
+			} else {
+				fmt.Printf("🔓 [MiniShare] Blocked commands now: %s\n", strings.Join(remaining, ", "))
+			}
+		}
+
+	case "dir", "folder":
+		var remaining []string
+		for _, existing := range cfg.BlockedFolders {
+			keep := true
+			for _, rm := range removeItems {
+				absRm, err := filepath.Abs(rm)
+				if err != nil {
+					absRm = rm
+				}
+				if existing == absRm {
+					keep = false
+					break
+				}
+			}
+			if keep {
+				remaining = append(remaining, existing)
+			}
+		}
+		cfg.BlockedFolders = remaining
+		if err := SaveConfig(cfg); err != nil {
+			fmt.Printf("❌ Failed to save config: %v\n", err)
+		} else {
+			if len(remaining) == 0 {
+				fmt.Println("🔓 [MiniShare] All folder restrictions removed.")
+			} else {
+				fmt.Printf("🔓 [MiniShare] Blocked folders now: %s\n", strings.Join(remaining, ", "))
+			}
+		}
+
+	default:
+		fmt.Printf("Unknown unblock target '%s'. Use 'cmd' or 'dir/folder'.\n", target)
 	}
 }
 
@@ -275,6 +467,16 @@ func HandleConfigCommand(args []string) {
 			fmt.Printf("  🔑 Persistent UUID: %s (Expired at %s)\n", cfg.PersistentUUID, cfg.UUIDExpiresAt.Format(time.RFC1123))
 		} else {
 			fmt.Printf("  🔑 Persistent UUID: %s (Expires: %s)\n", cfg.PersistentUUID, cfg.UUIDExpiresAt.Format(time.RFC1123))
+		}
+		if len(cfg.BlockedCommands) > 0 {
+			fmt.Printf("  🔒 Blocked Commands: %s\n", strings.Join(cfg.BlockedCommands, ", "))
+		} else {
+			fmt.Println("  🔒 Blocked Commands: None")
+		}
+		if len(cfg.BlockedFolders) > 0 {
+			fmt.Printf("  📁 Blocked Folders: %s\n", strings.Join(cfg.BlockedFolders, ", "))
+		} else {
+			fmt.Println("  📁 Blocked Folders: None")
 		}
 		return
 	}
@@ -630,6 +832,17 @@ func main() {
 			return
 		}
 
+		// Security block/unblock commands
+		if cmd1 == "block" {
+			HandleBlockCommand(os.Args[2:])
+			return
+		}
+
+		if cmd1 == "unblock" {
+			HandleUnblockCommand(os.Args[2:])
+			return
+		}
+
 		// Viewer connection command
 		if cmd1 == "connect" || cmd1 == "-c" || cmd1 == "c" {
 			if len(os.Args) < 3 {
@@ -682,7 +895,14 @@ Reset Commands:
   minishare reset server               Reset signaling server URL to default
   minishare reset uuid                 Reset persistent UUID to default
   minishare reset share                Reset UUID duration / expiration setting
-  minishare reset path                 Reset config file path to default OS location`)
+  minishare reset path                 Reset config file path to default OS location
+  minishare reset block                Clear all blocked commands and folders
+
+Security (Block / Unblock):
+  minishare block cmd <cmds...>        Block commands (comma or space separated)
+  minishare block dir|folder <paths...> Block folder access (comma or space separated)
+  minishare unblock cmd <cmds...>      Unblock specific commands
+  minishare unblock dir|folder <paths...> Unblock specific folder restrictions`)
 }
 
 // -------------------------------------------------------------------
@@ -779,21 +999,117 @@ func runHost() {
 
 	var cmdBuffer bytes.Buffer
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		// Check if we need to enforce security rules
+		hasBlockedCmds := len(cfg.BlockedCommands) > 0
+		hasBlockedDirs := len(cfg.BlockedFolders) > 0
+
+		// If no security rules, fast path — forward everything
+		if !hasBlockedCmds && !hasBlockedDirs {
+			for _, b := range msg.Data {
+				if b == '\r' || b == '\n' {
+					if typedCmd := strings.TrimSpace(cmdBuffer.String()); typedCmd != "" {
+						log.Printf("⌨️  [Viewer Command Executed]: %s", typedCmd)
+					}
+					cmdBuffer.Reset()
+				} else if b == 127 || b == 8 {
+					if cmdBuffer.Len() > 0 {
+						cmdBuffer.Truncate(cmdBuffer.Len() - 1)
+					}
+				} else if b >= 32 && b <= 126 {
+					cmdBuffer.WriteByte(b)
+				}
+			}
+			_, _ = ptmx.Write(msg.Data)
+			return
+		}
+
+		// Security-enforced path: process byte-by-byte
 		for _, b := range msg.Data {
 			if b == '\r' || b == '\n' {
-				if typedCmd := strings.TrimSpace(cmdBuffer.String()); typedCmd != "" {
-					log.Printf("⌨️  [Viewer Command Executed]: %s", typedCmd)
+				typedCmd := strings.TrimSpace(cmdBuffer.String())
+				if typedCmd != "" {
+					log.Printf("⌨️  [Viewer Command]: %s", typedCmd)
+
+					// --- Check blocked commands ---
+					if hasBlockedCmds {
+						cmdParts := strings.Fields(typedCmd)
+						blocked := false
+						for _, part := range cmdParts {
+							cleanPart := strings.ToLower(strings.TrimSpace(part))
+							if cleanPart == "|" || cleanPart == "&&" || cleanPart == "||" || cleanPart == ";" {
+								continue
+							}
+							for _, blockedCmd := range cfg.BlockedCommands {
+								if cleanPart == blockedCmd {
+									blocked = true
+									break
+								}
+							}
+							if blocked {
+								break
+							}
+						}
+
+						if blocked {
+							log.Printf("🚫 [Security] BLOCKED command: %s", typedCmd)
+							rejectMsg := fmt.Sprintf("\r\n\033[1;31m🚫 [MiniShare Security] Command '%s' is BLOCKED by host.\033[0m\r\n", typedCmd)
+							_ = dc.Send([]byte(rejectMsg))
+							cmdBuffer.Reset()
+							// Clear the typed text from the terminal line and refresh prompt
+							_ = dc.Send([]byte("\033[2K\r"))
+							_, _ = ptmx.Write([]byte("\n"))
+							continue
+						}
+					}
+
+					// --- Check blocked folders (cd command) ---
+					if hasBlockedDirs {
+						cmdParts := strings.Fields(typedCmd)
+						if len(cmdParts) >= 2 && cmdParts[0] == "cd" {
+							targetDir := cmdParts[1]
+							if !filepath.IsAbs(targetDir) {
+								if home, err := os.UserHomeDir(); err == nil {
+									targetDir = filepath.Join(home, targetDir)
+								}
+							}
+							targetDir = filepath.Clean(targetDir)
+
+							dirBlocked := false
+							for _, blockedDir := range cfg.BlockedFolders {
+								blockedDir = filepath.Clean(blockedDir)
+								if targetDir == blockedDir || strings.HasPrefix(targetDir, blockedDir+string(filepath.Separator)) {
+									dirBlocked = true
+									break
+								}
+							}
+
+							if dirBlocked {
+								log.Printf("🚫 [Security] BLOCKED folder access: %s", cmdParts[1])
+								rejectMsg := fmt.Sprintf("\r\n\033[1;31m🚫 [MiniShare Security] Access to '%s' is BLOCKED by host.\033[0m\r\n", cmdParts[1])
+								_ = dc.Send([]byte(rejectMsg))
+								cmdBuffer.Reset()
+								_ = dc.Send([]byte("\033[2K\r"))
+								_, _ = ptmx.Write([]byte("\n"))
+								continue
+							}
+						}
+					}
 				}
 				cmdBuffer.Reset()
+				// Command passed security checks — forward the Enter key
+				_, _ = ptmx.Write([]byte{b})
 			} else if b == 127 || b == 8 {
 				if cmdBuffer.Len() > 0 {
 					cmdBuffer.Truncate(cmdBuffer.Len() - 1)
 				}
-			} else if b >= 32 && b <= 126 {
-				cmdBuffer.WriteByte(b)
+				_, _ = ptmx.Write([]byte{b})
+			} else {
+				if b >= 32 && b <= 126 {
+					cmdBuffer.WriteByte(b)
+				}
+				_, _ = ptmx.Write([]byte{b})
 			}
 		}
-		_, _ = ptmx.Write(msg.Data)
 	})
 
 	dc.OnClose(func() {

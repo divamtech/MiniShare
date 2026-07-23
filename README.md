@@ -80,6 +80,7 @@ go build -o minishare main.go
 | **Persistent UUID** | `./minishare set uuid <uuid>` | `./minishare reset uuid` |
 | **UUID Duration** | `./minishare set share <1h\|2mo>` | `./minishare reset share` |
 | **Config File Path** | `./minishare set path <file-path>` | `./minishare reset path` |
+| **Security Rules** | — | `./minishare reset block` |
 | **ALL Settings** | — | `./minishare reset` *(or `reset default` / `reset all`)* |
 
 ---
@@ -96,6 +97,18 @@ go build -o minishare main.go
 #### Option B: Web Browser Viewer (Zero Installation Required!)
 Open `http://localhost:8080/app/<session-uuid>` in Chrome, Safari, or Firefox.
 An interactive terminal renders directly inside your browser window using `xterm.js` connected live to the Host via WebRTC P2P!
+
+---
+
+### 5. Security Restrictions (Block & Unblock)
+
+For safety and command restriction, the host can block specific commands or restrict directory access for remote viewers:
+
+- **Block commands**: `./minishare block cmd rm,sudo,shutdown`
+- **Block folder access**: `./minishare block dir|folder /etc,/var/log`
+- **Unblock commands**: `./minishare unblock cmd rm`
+- **Unblock folder access**: `./minishare unblock dir|folder /etc`
+- **Reset all security rules**: `./minishare reset block`
 
 ---
 

@@ -73,6 +73,7 @@ The official command-line tool for **MiniShare** — real-time P2P terminal shar
 | **Persistent UUID** | `minishare set uuid <uuid>` | `minishare reset uuid` |
 | **UUID Duration** | `minishare set share <1h\|2mo>` | `minishare reset share` |
 | **Config File Path** | `minishare set path <file-path>` | `minishare reset path` |
+| **Security Rules** | — | `minishare reset block` |
 | **ALL Settings** | — | `minishare reset` *(or `reset default` / `reset all`)* |
 
 ---
@@ -82,4 +83,38 @@ The official command-line tool for **MiniShare** — real-time P2P terminal shar
 - **View Active Settings & Config File Location**:
   ```bash
   minishare config
+  ```
+
+---
+
+### 5. Security Restrictions (Block & Unblock)
+
+For safety and command restriction, the host can block specific commands or restrict directory access for remote viewers:
+
+- **Block Commands** (comma or space separated):
+  ```bash
+  minishare block cmd rm,sudo,shutdown
+  minishare block cmd reboot
+  ```
+
+- **Block Folder Access** (comma or space separated, using either `dir` or `folder` keyword):
+  ```bash
+  minishare block dir /etc,/var/log
+  minishare block folder /var/log
+  ```
+
+- **Unblock Commands**:
+  ```bash
+  minishare unblock cmd rm,sudo
+  ```
+
+- **Unblock Folder Access** (using either `dir` or `folder` keyword):
+  ```bash
+  minishare unblock dir /etc
+  minishare unblock folder /var/log
+  ```
+
+- **Clear All Security Blocks**:
+  ```bash
+  minishare reset block
   ```

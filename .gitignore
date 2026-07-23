@@ -1,11 +1,33 @@
-# Binaries
+# Binaries and Executables
 minishare
 minishare-host
 minishare-viewer
+bin/
 *.exe
+*.exe;
 *.dll
 *.so
 *.dylib
+
+# Test binaries and output files
+*.test
+*.out
+coverage.txt
+coverage.html
+profile.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# Output and temporary directories
+tmp/
+dist/
+build/
+*.log
 
 # OS generated files
 .DS_Store
@@ -21,6 +43,8 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+*.sublime-workspace
 
-# Logs
-*.log
+# Environment files
+.env
+.env.local

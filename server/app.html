@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniShare Web Terminal ⚡</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-body: #eae6d1;
+      --bg-term: #152219;
+      --text-muted: #5e9367;
+      --text-main: #d1d5db;
+      --dot-red: #ff5f56;
+      --dot-yellow: #ffbd2e;
+      --dot-green: #27c93f;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-body);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      overflow: hidden;
+    }
+    .mac-window {
+      width: 92%;
+      max-width: 1100px;
+      height: 82vh;
+      background-color: var(--bg-term);
+      border-radius: 16px;
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .window-header {
+      height: 46px;
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+    .dots {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 80px;
+    }
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .dot.red { background-color: var(--dot-red); }
+    .dot.yellow { background-color: var(--dot-yellow); }
+    .dot.green { background-color: var(--dot-green); }
+
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'Fira Code', monospace;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: #6b7280;
+    }
+    .status-indicator.connected .status-dot {
+      background-color: #27c93f;
+      box-shadow: 0 0 8px #27c93f;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .action-link {
+      color: var(--text-muted);
+      font-size: 13px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      text-decoration: none;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .action-link:hover {
+      color: #92c99c;
+    }
+
+    .setup-overlay {
+      padding: 12px 20px;
+      background: rgba(0, 0, 0, 0.25);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .setup-overlay label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: 'Fira Code', monospace;
+      white-space: nowrap;
+    }
+    .setup-overlay input {
+      flex: 1;
+      background: #0e1711;
+      border: 1px solid #233628;
+      color: #e5e7eb;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-family: 'Fira Code', monospace;
+      font-size: 13px;
+      outline: none;
+    }
+    .setup-overlay input:focus {
+      border-color: #4ade80;
+    }
+    .setup-overlay button {
+      background: #233628;
+      color: #a3d9ad;
+      border: 1px solid #324e3a;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .setup-overlay button:hover {
+      background: #2e4735;
+    }
+
+    #terminal-container {
+      flex: 1;
+      background-color: var(--bg-term);
+      padding: 12px 16px 16px 16px;
+      cursor: text;
+    }
+    .xterm { height: 100%; }
+    .xterm-viewport {
+      background-color: var(--bg-term) !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="mac-window">
+    <div class="window-header">
+      <div class="dots">
+        <div class="dot red"></div>
+        <div class="dot yellow"></div>
+        <div class="dot green"></div>
+      </div>
+      <div class="header-center">
+        <span>minishare</span>
+        <span>—</span>
+        <span id="header-uuid">connecting...</span>
+        <div id="status-indicator" class="status-indicator">
+          <span class="status-dot"></span>
+          <span id="status-text">Disconnected</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <a class="action-link" onclick="toggleServerConfig()">⚙️ Server</a>
+        <a class="action-link" onclick="disconnectSession()">Disconnect</a>
+      </div>
+    </div>
+
+    <!-- Server Configuration Overlay Bar -->
+    <div id="server-bar" class="setup-overlay" style="display: none;">
+      <label>Server URL:</label>
+      <input type="text" id="server-url-input" placeholder="http://localhost:8080" />
+      <button onclick="saveServerURL()">Save Server</button>
+      <button onclick="resetServerURL()" style="background: transparent; border-color: #444; color: #aaa;">Reset</button>
+    </div>
+
+    <!-- Session UUID Input Overlay Bar -->
+    <div id="setup-bar" class="setup-overlay" style="display: flex;">
+      <input type="text" id="uuid-input" placeholder="Paste Session UUID here..." />
+      <button onclick="startManualConnect()">Connect P2P</button>
+    </div>
+
+    <div id="terminal-container"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+  <script>
+    const term = new Terminal({
+      cursorBlink: true,
+      fontFamily: "'Fira Code', monospace",
+      fontSize: 14,
+      theme: {
+        background: "#152219",
+        foreground: "#d1d5db",
+        cursor: "#4ade80"
+      }
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    
+    const termContainer = document.getElementById('terminal-container');
+    term.open(termContainer);
+    fitAddon.fit();
+
+    window.addEventListener('resize', () => fitAddon.fit());
+    
+    // Focus terminal only when clicking inside mac-window outside input/buttons
+    document.querySelector('.mac-window').addEventListener('click', (e) => {
+      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
+        term.focus();
+      }
+    });
+
+    // Support Enter key inside UUID input box
+    document.getElementById('uuid-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        startManualConnect();
+      }
+    });
+
+    // Support Enter key inside Server URL input box
+    document.getElementById('server-url-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        saveServerURL();
+      }
+    });
+
+    // Handle Ctrl+] keypress explicitly in xterm
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.ctrlKey && (event.key === ']' || event.keyCode === 221)) {
+        if (event.type === 'keydown') {
+          term.writeln('\r\n\x1b[1;33m[MiniShare] Detached via Ctrl+].\x1b[0m');
+          disconnectSession();
+        }
+        return false;
+      }
+      return true;
+    });
+
+    let pc = null;
+    let dataChannel = null;
+    let isConnected = false;
+    let inputBuffer = "";
+    const textDecoder = new TextDecoder();
+
+    // -----------------------------------------------------------------
+    // SIGNALING SERVER URL CONFIGURATION
+    // -----------------------------------------------------------------
+    function getStoredServerURL() {
+      const params = new URLSearchParams(window.location.search);
+      const urlParam = params.get('server');
+      if (urlParam) return urlParam.trim();
+
+      const saved = localStorage.getItem('minishare_server_url');
+      if (saved) return saved.trim();
+
+      return window.location.origin;
+    }
+
+    function getSignalingURL(endpoint) {
+      let base = document.getElementById('server-url-input').value.trim();
+      if (!base) {
+        base = getStoredServerURL();
+      }
+      base = base.replace(/\/+$/, '');
+      if (!base.startsWith('http://') && !base.startsWith('https://')) {
+        base = 'http://' + base;
+      }
+      return `${base}${endpoint}`;
+    }
+
+    function initServerConfig() {
+      const current = getStoredServerURL();
+      document.getElementById('server-url-input').value = current;
+    }
+    initServerConfig();
+
+    function toggleServerConfig() {
+      const bar = document.getElementById('server-bar');
+      bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+      if (bar.style.display === 'flex') {
+        document.getElementById('server-url-input').focus();
+      }
+    }
+
+    function saveServerURL() {
+      const val = document.getElementById('server-url-input').value.trim();
+      if (!val) {
+        resetServerURL();
+        return;
+      }
+      let url = val;
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        url = 'http://' + url;
+      }
+      localStorage.setItem('minishare_server_url', url);
+      document.getElementById('server-url-input').value = url;
+      document.getElementById('server-bar').style.display = 'none';
+      term.clear();
+      term.writeln(`\x1b[1;32m[MiniShare] Signaling server URL saved: ${url}\x1b[0m\r\n`);
+      if (!isConnected) {
+        showOfflinePrompt();
+      }
+    }
+
+    function resetServerURL() {
+      localStorage.removeItem('minishare_server_url');
+      const defaultURL = window.location.origin;
+      document.getElementById('server-url-input').value = defaultURL;
+      document.getElementById('server-bar').style.display = 'none';
+      term.clear();
+      term.writeln(`\x1b[1;32m[MiniShare] Signaling server URL reset to default: ${defaultURL}\x1b[0m\r\n`);
+      if (!isConnected) {
+        showOfflinePrompt();
+      }
+    }
+
+    // -----------------------------------------------------------------
+    // TERMINAL INPUT & P2P CONNECTION
+    // -----------------------------------------------------------------
+    function showOfflinePrompt() {
+      const serverURL = getSignalingURL('');
+      term.writeln('\x1b[1;34m⚡ MiniShare Web Viewer Ready\x1b[0m');
+      term.writeln(`Server: \x1b[36m${serverURL}\x1b[0m`);
+      term.writeln('Paste or type a Session UUID below (or use clear/reset):');
+      term.write('\r\n\x1b[1;32m> \x1b[0m');
+    }
+
+    term.onData((key) => {
+      if (key === '\x1d') { // Ctrl+]
+        term.writeln('\r\n\x1b[1;33m[MiniShare] Detached via Ctrl+].\x1b[0m');
+        disconnectSession();
+        return;
+      }
+
+      if (isConnected && dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(key);
+        return;
+      }
+
+      if (!isConnected) {
+        if (key === '\r' || key === '\n') {
+          const cmd = inputBuffer.trim();
+          inputBuffer = "";
+
+          if (cmd === 'clear' || cmd === 'cls' || cmd === 'reset') {
+            term.clear();
+            showOfflinePrompt();
+            return;
+          }
+
+          term.writeln('');
+          if (cmd) {
+            document.getElementById('header-uuid').textContent = cmd.substring(0, 8) + '...';
+            connectSession(cmd);
+          } else {
+            term.write('\x1b[1;32m> \x1b[0m');
+          }
+        } else if (key === '\x7f' || key === '\b') {
+          if (inputBuffer.length > 0) {
+            inputBuffer = inputBuffer.slice(0, -1);
+            term.write('\b \b');
+          }
+        } else if (key.length === 1 && key.charCodeAt(0) >= 32) {
+          inputBuffer += key;
+          term.write(key);
+        } else if (key.length > 1) {
+          const cleanKey = key.replace(/[\r\n]/g, '').trim();
+          inputBuffer += cleanKey;
+          term.write(cleanKey);
+        }
+      }
+    });
+
+    function getUUIDFromURL() {
+      const path = window.location.pathname;
+      if (path.startsWith('/app/')) {
+        const parts = path.split('/');
+        if (parts.length >= 3 && parts[2].trim()) {
+          return parts[2].trim();
+        }
+      }
+      if (window.location.hash) {
+        return window.location.hash.substring(1).trim();
+      }
+      return "";
+    }
+
+    const initialUUID = getUUIDFromURL();
+    if (initialUUID) {
+      document.getElementById('header-uuid').textContent = initialUUID.substring(0, 8) + '...';
+      connectSession(initialUUID);
+    } else {
+      document.getElementById('header-uuid').textContent = 'no session';
+      showOfflinePrompt();
+    }
+
+    function startManualConnect() {
+      const input = document.getElementById('uuid-input').value.trim();
+      if (!input) {
+        alert('Please enter a valid Session UUID!');
+        return;
+      }
+      document.getElementById('header-uuid').textContent = input.substring(0, 8) + '...';
+      connectSession(input);
+    }
+
+    function markDisconnected() {
+      isConnected = false;
+      const statusInd = document.getElementById('status-indicator');
+      statusInd.className = "status-indicator";
+      document.getElementById('status-text').textContent = 'Disconnected';
+      document.getElementById('setup-bar').style.display = 'flex';
+    }
+
+    async function connectSession(uuid) {
+      const targetServer = getSignalingURL('');
+      term.writeln(`\x1b[36m[MiniShare] Connecting to signaling server: ${targetServer}...\x1b[0m`);
+
+      try {
+        // 1. Fetch offer from signaling server C
+        const resp = await fetch(getSignalingURL(`/api/session/${uuid}/offer`));
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(errText || "Session not found or expired");
+        }
+        const data = await resp.json();
+        const offerSDP = decodePayload(data.offer);
+
+        // 2. Setup WebRTC PeerConnection
+        pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        });
+
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+            markDisconnected();
+            term.writeln('\r\n\x1b[31m[MiniShare] Remote host disconnected.\x1b[0m\r\n');
+            showOfflinePrompt();
+          }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
+            markDisconnected();
+          }
+        };
+
+        pc.ondatachannel = (event) => {
+          dataChannel = event.channel;
+          dataChannel.binaryType = 'arraybuffer';
+
+          dataChannel.onopen = () => {
+            isConnected = true;
+            const statusInd = document.getElementById('status-indicator');
+            statusInd.className = "status-indicator connected";
+            document.getElementById('status-text').textContent = 'Connected';
+            document.getElementById('setup-bar').style.display = 'none';
+            term.clear();
+            term.focus();
+            dataChannel.send('\r');
+          };
+
+          dataChannel.onclose = () => {
+            markDisconnected();
+            term.writeln('\r\n\x1b[31m[MiniShare] WebRTC session closed.\x1b[0m\r\n');
+            showOfflinePrompt();
+          };
+
+          dataChannel.onmessage = (msg) => {
+            if (typeof msg.data === 'string') {
+              term.write(msg.data);
+            } else if (msg.data instanceof ArrayBuffer) {
+              term.write(textDecoder.decode(new Uint8Array(msg.data)));
+            } else if (msg.data instanceof Blob) {
+              msg.data.arrayBuffer().then(buf => {
+                term.write(textDecoder.decode(new Uint8Array(buf)));
+              });
+            }
+          };
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(offerSDP));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        // Wait for ICE gathering
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === 'complete') resolve();
+          else {
+            const checkCandidate = (e) => {
+              if (!e.candidate) {
+                pc.removeEventListener('icecandidate', checkCandidate);
+                resolve();
+              }
+            };
+            pc.addEventListener('icecandidate', checkCandidate);
+          }
+        });
+
+        // 3. Post answer back to signaling server C
+        const encodedAnswer = encodePayload(pc.localDescription);
+        const postResp = await fetch(getSignalingURL(`/api/session/${uuid}/answer`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answer: encodedAnswer })
+        });
+
+        if (!postResp.ok) {
+          throw new Error("Failed to send answer to signaling server");
+        }
+
+        term.writeln('\x1b[32m[MiniShare] Answer sent! Establishing P2P link...\x1b[0m');
+
+      } catch (err) {
+        term.writeln(`\r\n\x1b[31m[Error] ${err.message}\x1b[0m\r\n`);
+        markDisconnected();
+        showOfflinePrompt();
+      }
+    }
+
+    function disconnectSession() {
+      if (dataChannel) {
+        dataChannel.close();
+      }
+      if (pc) {
+        pc.close();
+      }
+      markDisconnected();
+      term.writeln('\r\n\x1b[33m[MiniShare] Disconnected from remote session.\x1b[0m\r\n');
+      showOfflinePrompt();
+    }
+
+    function encodePayload(obj) {
+      return btoa(JSON.stringify(obj));
+    }
+
+    function decodePayload(str) {
+      str = str.trim().replace(/\s+/g, '');
+      return JSON.parse(atob(str));
+    }
+  </script>
+</body>
+</html>

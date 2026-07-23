@@ -1,126 +1,131 @@
-# MiniShare ⚡
+<div align="center">
+  <h1>MiniShare ⚡</h1>
+  <p><strong>Secure, Instant, Peer-to-Peer (WebRTC) Terminal Sharing & Collaboration</strong></p>
+  
+  [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+  [![Go Version](https://img.shields.io/badge/Go-1.23%2B-blue.svg)](https://golang.org)
+  [![WebRTC](https://img.shields.io/badge/Network-100%25%20P2P%20(WebRTC)-orange.svg)](#)
+  [![E2EE](https://img.shields.io/badge/Security-End--to--End%20Encrypted-purple.svg)](#)
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Go Version](https://img.shields.io/badge/Go-1.23%2B-blue.svg)](https://golang.org)
-
-**MiniShare** is an open-source, real-time P2P terminal sharing tool and cloud signaling server written in Go. It enables secure, encrypted terminal sharing directly between machines using WebRTC DataChannels.
-
-Terminal data flows **100% peer-to-peer (P2P)** with End-to-End Encryption — the cloud signaling server only handles initial session UUID discovery and never touches terminal data.
-
----
-
-## 📂 Repository Architecture
-
-MiniShare is organized into two completely decoupled Go modules:
-
-```text
-MiniShare/
-├── cli/                        # 💻 Terminal CLI Application (Host & Viewer)
-│   ├── main.go                 # Self-contained Unified CLI Binary
-│   ├── go.mod                  # Independent CLI Go module
-│   ├── go.sum
-│   └── README.md
-│
-├── server/                     # 🌐 Cloud Signaling Server & Web SPA
-│   ├── main.go                 # Pure Go HTTP Signaling Server
-│   ├── index.html              # Embedded Web Terminal SPA (xterm.js)
-│   ├── go.mod                  # Independent Server Go module
-│   ├── Dockerfile              # Container deployment for Cloud (Render/Fly.io/AWS)
-│   └── README.md
-│
-├── LICENSE
-├── README.md                   # Main Documentation
-└── .gitignore
-```
+  <br />
+  
+  <img src="./assets/landing_preview.jpg" alt="MiniShare Landing Hero" width="760" style="border-radius: 12px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);" />
+</div>
 
 ---
 
-## 📦 Dependency Installation & Quick Start
+## ✨ Features
 
-### 1. Install CLI Dependencies & Build
+* **⚡ Zero-Config P2P Connections**: Stream terminals directly between machines using WebRTC. No port forwarding, no firewall adjustments, and no reverse tunnels.
+* **🔒 End-to-End Encrypted**: Out-of-the-box DTLS/SRTP encryption. Keystrokes and terminal buffer streams never touch the cloud signaling server.
+* **🛡️ Command & Folder Blocking**: Advanced sandbox engine on the host intercepts actions in real time. Restrict dangerous execution (`sudo`, `rm`) or hidden folders (`/etc`).
+* **💻 Single Binary, Double Mode**: Host session terminal streams, or join active rooms from the command line using the same lightweight Go executable.
+* **🌐 Web Client App**: Invite browser users to view your active terminal stream directly via a responsive xterm.js Web App at `/app`.
 
+---
+
+## 📸 Web Terminal client (/app)
+
+The client loads a premium terminal viewer in any web browser, establishing a secure direct WebRTC link to the host console session:
+
+<div align="center">
+  <img src="./assets/app_terminal_preview.jpg" alt="MiniShare Web Terminal Client Viewer" width="700" style="border-radius: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);" />
+</div>
+
+---
+
+## 📦 Installation
+
+Compile the zero-dependency executable binary locally:
 ```bash
 cd cli
-go mod tidy
 go build -o minishare main.go
 ```
+*(Or install globally: `go install github.com/divamtech/minishare/cli@latest`)*
 
 ---
 
-### 2. Start Host Session
+## 🚀 Quick Start Guide
 
-- **Standard Host Mode** (fresh UUID by default for safe use):
-  ```bash
-  ./minishare
-  ```
-
-- **Background Daemon Mode (`-d`)**:
-  ```bash
-  ./minishare -d                        # Run Host in background
-  ./minishare uuid team-room -d         # Custom UUID + background daemon
-  ./minishare daemon status             # Check daemon status & Session UUID
-  ./minishare kill -d                   # Stop background daemon
-  ```
-
-- **Persistent / Duration-based UUID (`share` / `uuid`)**:
-  ```bash
-  ./minishare set share 1h              # Persistent for 1 hour
-  ./minishare set share 2mo             # Persistent for 2 months
-  ./minishare set share 4y              # Persistent for 4 years
-  ./minishare set uuid team-room        # Fixed UUID permanently
-  ```
-
----
-
-### 3. Symmetric Configuration Management (`set` & `reset`)
-
-| Target Property | Set Command | Reset Command |
-| :--- | :--- | :--- |
-| **Signaling Server** | `./minishare set server <url>` | `./minishare reset server` |
-| **Persistent UUID** | `./minishare set uuid <uuid>` | `./minishare reset uuid` |
-| **UUID Duration** | `./minishare set share <1h\|2mo>` | `./minishare reset share` |
-| **Config File Path** | `./minishare set path <file-path>` | `./minishare reset path` |
-| **Security Rules** | — | `./minishare reset block` |
-| **ALL Settings** | — | `./minishare reset` *(or `reset default` / `reset all`)* |
-
----
-
-### 4. Connect as Viewer
-
-#### Option A: CLI Viewer
+### 1. Host a Sharing Session
+Type `minishare` to start hosting. A unique room ID is generated and copied to your clipboard automatically:
 ```bash
-./minishare connect <session-uuid>
-# Aliases: ./minishare -c <session-uuid> or ./minishare c <session-uuid>
+./minishare
 ```
-*(Press `Ctrl+]` or type `exit` to detach at any time)*
 
-#### Option B: Web Browser Viewer (Zero Installation Required!)
-Open `http://localhost:8080/app/<session-uuid>` in Chrome, Safari, or Firefox.
-An interactive terminal renders directly inside your browser window using `xterm.js` connected live to the Host via WebRTC P2P!
+### 2. Connect as a Viewer
+Teammates can connect to your live terminal session in one of two ways:
 
----
-
-### 5. Security Restrictions (Block & Unblock)
-
-For safety and command restriction, the host can block specific commands or restrict directory access for remote viewers:
-
-- **Block commands**: `./minishare block cmd rm,sudo,shutdown`
-- **Block folder access**: `./minishare block dir|folder /etc,/var/log`
-- **Unblock commands**: `./minishare unblock cmd rm`
-- **Unblock folder access**: `./minishare unblock dir|folder /etc`
-- **Reset all security rules**: `./minishare reset block`
+* **Option A: Web Browser Client (Zero Install)**
+  Open the browser link generated by the host CLI:
+  `http://localhost:8080/app/<uuid>`
+* **Option B: CLI Client (Terminal Viewer)**
+  Join directly from another terminal:
+  ```bash
+  ./minishare connect <uuid>
+  ```
+  *(Type `exit` or press `Ctrl+]` to detach from the session at any time)*
 
 ---
 
-## 🌐 Running & Deploying the Signaling Server
+## 🛠️ CLI Command Reference
 
+MiniShare features a clean, colorized CLI help menu (run `./minishare -h` to see it in action). Here is the reference:
+
+### Host & Viewer Controls
+```bash
+minishare                            Start Host session (fresh UUID by default)
+minishare -d                         Start Host session in background daemon mode
+minishare daemon status              Check background daemon status and UUID
+minishare kill -d                    Stop running background daemon process
+minishare connect|-c|c <uuid>        Connect to a remote Host session
+```
+
+### Symmetric Configuration Settings
+Customize server URLs, durations, and configuration paths:
+```bash
+minishare set server <url>           Set signaling server URL
+minishare set uuid <uuid>            Set fixed persistent UUID
+minishare set share <1h|2mo|never>   Set UUID duration (1h, 30m, 2d, 2mo, 4y, never)
+minishare set path <file-path>       Set custom config file path
+```
+Restore settings to factory defaults:
+```bash
+minishare reset                      Reset all settings to default (alias: reset default)
+minishare reset server               Reset signaling server URL to default
+minishare reset uuid                 Reset persistent UUID to default
+minishare reset share                Reset UUID duration / expiration setting
+minishare reset path                 Reset config file path to default OS location
+minishare reset block                Clear all blocked commands and folders
+```
+
+### Security Filtering (Host Sandbox)
+Restrict what commands or paths the connected viewer can run or inspect:
+```bash
+minishare block cmd <cmds...>        Block commands (comma or space separated)
+minishare block dir <paths...>       Block folder navigation (comma or space separated)
+minishare unblock cmd <cmds...>      Unblock specific commands
+minishare unblock dir <paths...>     Unblock specific folder restrictions
+```
+
+---
+
+## 🛡️ Sandbox & Security Filters in Action
+To restrict command lines on the fly, run:
+```bash
+minishare block cmd rm,sudo,shutdown,reboot
+```
+When viewers connect, any attempt to run blocked binaries or navigate to blocked paths will be immediately terminated on the host before execution.
+
+---
+
+## 🌐 Run Signaling Server Locally
+Run the Go signaling server on your own server or cluster:
 ```bash
 cd server
-go mod tidy
 go run main.go --port 8080
 ```
-
-To deploy to Docker / Render / Fly.io / AWS / Railway:
+Or containerize with Docker:
 ```bash
 docker build -t minishare-server ./server
 docker run -p 8080:8080 minishare-server
@@ -128,13 +133,9 @@ docker run -p 8080:8080 minishare-server
 
 ---
 
-## 🗺️ Future Architecture Roadmap
+## 🗺️ Codebase & Architecture Details
 
-We are actively expanding MiniShare with advanced networking features:
-
-- **⚡ Ngrok-style Tunneling**: Global HTTP, Database (PostgreSQL, MySQL, Redis), and TCP/UDP port forwarding tunneled directly through WebRTC P2P DataChannels.
-- **🔐 Multi-Factor Session Auth**: Optional PIN / passphrase protection for shared sessions.
-- **👥 Multi-Viewer Broadcast**: Shared read-only terminal sessions for live pairing, teaching, and demos.
+To read more about repository folder structures and WebRTC signaling flow diagrams, check out [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 

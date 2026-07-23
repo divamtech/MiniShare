@@ -16,6 +16,9 @@ import (
 //go:embed index.html
 var indexHTML []byte
 
+//go:embed app.html
+var appHTML []byte
+
 type Session struct {
 	UUID      string    `json:"uuid"`
 	Offer     string    `json:"offer,omitempty"`
@@ -152,14 +155,19 @@ func main() {
 		}
 	})
 
-	// Serve Embedded Web SPA at root or /app/
+	// Serve Landing Page or Embedded Web SPA based on path
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" && !strings.HasPrefix(r.URL.Path, "/app/") {
-			http.NotFound(w, r)
+		if r.URL.Path == "/" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(indexHTML)
 			return
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(indexHTML)
+		if r.URL.Path == "/app" || strings.HasPrefix(r.URL.Path, "/app/") {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(appHTML)
+			return
+		}
+		http.NotFound(w, r)
 	})
 
 	addr := fmt.Sprintf(":%d", *port)

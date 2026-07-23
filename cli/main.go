@@ -872,37 +872,48 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Println(`MiniShare CLI ⚡ - Real-time P2P Terminal Sharing
+	helpText := `[TITLE]MiniShare CLI [YELLOW]⚡[TITLE] - Real-time P2P Terminal Sharing[RESET]
 
-Usage:
-  minishare                            Start Host session (fresh UUID by default)
-  minishare -d                         Start Host session in background daemon mode
-  minishare daemon status              Check background daemon status and UUID
-  minishare kill -d                    Stop running background daemon process
-  minishare connect|-c|c <session-uuid> Connect to a remote Host session
+[HEADER]Usage:[RESET]
+  [CMD]minishare[RESET]                            [DESC]Start Host session (fresh UUID by default)[RESET]
+  [CMD]minishare -d[RESET]                         [DESC]Start Host session in background daemon mode[RESET]
+  [CMD]minishare daemon status[RESET]              [DESC]Check background daemon status and UUID[RESET]
+  [CMD]minishare kill -d[RESET]                    [DESC]Stop running background daemon process[RESET]
+  [CMD]minishare connect|-c|c[RESET] [PARAM]<session-uuid>[RESET] [DESC]Connect to a remote Host session[RESET]
 
-Configuration Management:
-  minishare config                     View active settings & config file location
+[HEADER]Configuration Management:[RESET]
+  [CMD]minishare config[RESET]                     [DESC]View active settings & config file location[RESET]
 
-Set Options:
-  minishare set server <url>           Set signaling server URL
-  minishare set uuid <uuid>            Set fixed persistent UUID
-  minishare set share <1h|2mo|never>   Set UUID duration (1h, 30m, 2d, 2mo, 4y, never)
-  minishare set path <file-path>       Set custom config file path
+[HEADER]Set Options:[RESET]
+  [CMD]minishare set server[RESET] [PARAM]<url>[RESET]           [DESC]Set signaling server URL[RESET]
+  [CMD]minishare set uuid[RESET] [PARAM]<uuid>[RESET]            [DESC]Set fixed persistent UUID[RESET]
+  [CMD]minishare set share[RESET] [PARAM]<1h|2mo|never>[RESET]   [DESC]Set UUID duration (1h, 30m, 2d, 2mo, 4y, never)[RESET]
+  [CMD]minishare set path[RESET] [PARAM]<file-path>[RESET]       [DESC]Set custom config file path[RESET]
 
-Reset Commands:
-  minishare reset                      Reset all settings to default (alias: reset default, reset all)
-  minishare reset server               Reset signaling server URL to default
-  minishare reset uuid                 Reset persistent UUID to default
-  minishare reset share                Reset UUID duration / expiration setting
-  minishare reset path                 Reset config file path to default OS location
-  minishare reset block                Clear all blocked commands and folders
+[HEADER]Reset Commands:[RESET]
+  [CMD]minishare reset[RESET]                      [DESC]Reset all settings to default (alias: reset default, reset all)[RESET]
+  [CMD]minishare reset server[RESET]               [DESC]Reset signaling server URL to default[RESET]
+  [CMD]minishare reset uuid[RESET]                 [DESC]Reset persistent UUID to default[RESET]
+  [CMD]minishare reset share[RESET]                [DESC]Reset UUID duration / expiration setting[RESET]
+  [CMD]minishare reset path[RESET]                 [DESC]Reset config file path to default OS location[RESET]
+  [CMD]minishare reset block[RESET]                [DESC]Clear all blocked commands and folders[RESET]
 
-Security (Block / Unblock):
-  minishare block cmd <cmds...>        Block commands (comma or space separated)
-  minishare block dir|folder <paths...> Block folder access (comma or space separated)
-  minishare unblock cmd <cmds...>      Unblock specific commands
-  minishare unblock dir|folder <paths...> Unblock specific folder restrictions`)
+[HEADER]Security (Block / Unblock):[RESET]
+  [CMD]minishare block cmd[RESET] [PARAM]<cmds...>[RESET]        [DESC]Block commands (comma or space separated)[RESET]
+  [CMD]minishare block dir|folder[RESET] [PARAM]<paths...>[RESET] [DESC]Block folder access (comma or space separated)[RESET]
+  [CMD]minishare unblock cmd[RESET] [PARAM]<cmds...>[RESET]      [DESC]Unblock specific commands[RESET]
+  [CMD]minishare unblock dir|folder[RESET] [PARAM]<paths...>[RESET] [DESC]Unblock specific folder restrictions[RESET]`
+
+	replacer := strings.NewReplacer(
+		"[TITLE]", "\033[1;36m",
+		"[YELLOW]", "\033[1;33m",
+		"[HEADER]", "\033[1;35m",
+		"[CMD]", "\033[1;32m",
+		"[PARAM]", "\033[36m",
+		"[DESC]", "\033[90m",
+		"[RESET]", "\033[0m",
+	)
+	fmt.Println(replacer.Replace(helpText))
 }
 
 // -------------------------------------------------------------------
@@ -911,7 +922,7 @@ Security (Block / Unblock):
 func runHost() {
 	cfg := LoadConfig()
 
-	fmt.Printf("[MiniShare] Connecting to signaling server: %s\n", cfg.ServerURL)
+	fmt.Printf("\033[90m[MiniShare] Connecting to signaling server: %s\033[0m\n", cfg.ServerURL)
 
 	manualFlag := flag.Bool("manual", false, "Run in manual copy-paste mode")
 	flag.CommandLine.Parse(os.Args[1:])
@@ -966,6 +977,8 @@ func runHost() {
 	}()
 
 	dc.OnOpen(func() {
+		fmt.Println("\n\033[1;32m✓ Peer connected successfully (Web Browser or CLI client)\033[0m")
+		fmt.Println("\033[1;32mSession active — terminal streaming peer-to-peer...\033[0m\n")
 		log.Println("Data channel open — P2P session live")
 		hostname, _ := os.Hostname()
 		banner := fmt.Sprintf("\r\n\033[1;32m┌─────────────────────────────────────────────────────────────┐\033[0m\r\n"+
@@ -1175,14 +1188,14 @@ func runHost() {
 	}
 
 	webLink := fmt.Sprintf("%s/app/%s", serverURL, sessResp.UUID)
-	fmt.Println("\n⚡ MiniShare Host Session Live")
-	fmt.Printf("🔑 Session UUID: %s\n", sessResp.UUID)
-	fmt.Printf("💻 Connect via CLI: minishare connect %s\n", sessResp.UUID)
-	fmt.Printf("🌐 Connect via Web Browser: %s\n", webLink)
+	fmt.Println("\n\033[1;32m⚡ MiniShare Host Session Live\033[0m")
+	fmt.Printf("🔑 \033[1;37mSession UUID:\033[0m \033[1;36m%s\033[0m\n", sessResp.UUID)
+	fmt.Printf("💻 \033[1;37mConnect via CLI:\033[0m \033[1;33mminishare connect %s\033[0m\n", sessResp.UUID)
+	fmt.Printf("🌐 \033[1;37mConnect via Web Browser:\033[0m \033[4;36m%s\033[0m\n", webLink)
 	copyToClipboard(sessResp.UUID)
-	fmt.Println("👉 Session UUID copied to clipboard automatically!")
+	fmt.Println("\033[1;32m👉 Session UUID copied to clipboard automatically!\033[0m")
 
-	fmt.Println("\nWaiting for peer to connect...")
+	fmt.Println("\n\033[90mWaiting for peer to connect...\033[0m")
 
 	go func() {
 		for {
@@ -1219,13 +1232,13 @@ func runHost() {
 }
 
 func runManualHost(pc *webrtc.PeerConnection, offerCode string, done chan struct{}) {
-	fmt.Println("\n=== Share this code with the viewer ===")
-	fmt.Println(offerCode)
-	fmt.Println("=== end code ===")
+	fmt.Println("\n\033[1;35m=== Share this code with the viewer ===\033[0m")
+	fmt.Println("\033[1;36m" + offerCode + "\033[0m")
+	fmt.Println("\033[1;35m=== end code ===\033[0m")
 	copyToClipboard(offerCode)
-	fmt.Println("👉 Code copied to system clipboard automatically!")
+	fmt.Println("\033[1;32m👉 Code copied to system clipboard automatically!\033[0m")
 
-	fmt.Print("\nPaste the code from the viewer (or press Enter to use clipboard):\n> ")
+	fmt.Print("\n\033[1;37mPaste the code from the viewer (or press Enter to use clipboard):\033[0m\n> ")
 	reader := bufio.NewReader(os.Stdin)
 	line, _ := reader.ReadString('\n')
 	line = cleanInput(line)
@@ -1248,7 +1261,7 @@ func runManualHost(pc *webrtc.PeerConnection, offerCode string, done chan struct
 func runViewer(uuid string) {
 	cfg := LoadConfig()
 
-	fmt.Printf("[MiniShare] Connecting to signaling server: %s\n", cfg.ServerURL)
+	fmt.Printf("\033[90m[MiniShare] Connecting to signaling server: %s\033[0m\n", cfg.ServerURL)
 
 	serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
 	resp, err := getJSON(fmt.Sprintf("%s/api/session/%s/offer", serverURL, uuid))
@@ -1344,7 +1357,7 @@ func runViewer(uuid string) {
 		log.Fatalf("failed to post answer to signaling server: %v", err)
 	}
 
-	fmt.Println("Connecting to host P2P...")
+	fmt.Println("\033[90mConnecting to host P2P...\033[0m")
 	select {
 	case <-connected:
 	case <-done:

@@ -2,562 +2,1118 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MiniShare Web Terminal ⚡</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>MiniShare ⚡ — Share your terminal, instantly</title>
+  <meta name="description" content="MiniShare is an open-source, secure, peer-to-peer terminal sharing tool. Share your terminal with anyone in seconds via WebRTC, with command blocking and folder restriction security.">
+  <meta name="author" content="MiniShare Contributors">
+  <meta name="keywords" content="terminal sharing, peer-to-peer terminal, WebRTC terminal, share terminal, remote terminal, pair programming, LAN terminal, minishare">
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Inter:wght@400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  
   <style>
     :root {
-      --bg-body: #eae6d1;
-      --bg-term: #152219;
-      --text-muted: #5e9367;
-      --text-main: #d1d5db;
-      --dot-red: #ff5f56;
-      --dot-yellow: #ffbd2e;
-      --dot-green: #27c93f;
+      --bg-primary: #faf8f2;
+      --bg-secondary: #f4f1e4;
+      --bg-card: #ffffff;
+      --color-primary: #152219;
+      --color-accent: #22c55e;
+      --color-accent-dark: #166534;
+      --color-text-body: #2c3b31;
+      --color-text-muted: #5e7a68;
+      --bg-dark-term: #0f1813;
+      --text-term: #e2e8f0;
+      --border-color: rgba(21, 34, 25, 0.08);
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-display: 'Bricolage Grotesque', sans-serif;
+      --font-mono: 'Fira Code', monospace;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
-      background-color: var(--bg-body);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      min-height: 100vh;
+      background-color: var(--bg-primary);
+      color: var(--color-text-body);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Container */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
       display: flex;
       justify-content: center;
-      align-items: center;
-      padding: 24px;
-      overflow: hidden;
+      padding: 20px 0;
     }
-    .mac-window {
-      width: 92%;
-      max-width: 1100px;
-      height: 82vh;
-      background-color: var(--bg-term);
-      border-radius: 16px;
-      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-    .window-header {
-      height: 46px;
-      padding: 0 20px;
+
+    .nav-inner {
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      user-select: none;
+      gap: 20px;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid var(--border-color);
+      border-radius: 999px;
+      padding: 6px 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
     }
-    .dots {
+
+    .nav-logo {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      color: var(--color-primary);
+      text-decoration: none;
+      font-size: 14px;
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .nav-links {
       display: flex;
       align-items: center;
       gap: 8px;
-      width: 80px;
     }
-    .dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-    .dot.red { background-color: var(--dot-red); }
-    .dot.yellow { background-color: var(--dot-yellow); }
-    .dot.green { background-color: var(--dot-green); }
 
-    .header-center {
+    .nav-link {
+      font-size: 13.5px;
+      color: var(--color-text-body);
+      text-decoration: none;
+      padding: 6px 14px;
+      border-radius: 999px;
+      transition: all 0.2s ease;
+      font-weight: 500;
+    }
+
+    .nav-link:hover {
+      background-color: rgba(21, 34, 25, 0.05);
+      color: var(--color-primary);
+    }
+
+    .nav-btn {
+      background-color: var(--color-primary);
+      color: #ffffff !important;
+      padding: 8px 18px;
+      font-size: 13.5px;
+      font-weight: 600;
+      border-radius: 999px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .nav-btn:hover {
+      background-color: var(--color-text-muted);
+      transform: translateY(-1px);
+    }
+
+    /* Hero Section */
+    .hero {
+      position: relative;
+      padding-top: 140px;
+      padding-bottom: 80px;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80%;
+      height: 400px;
+      background: radial-gradient(ellipse at top, rgba(34, 197, 94, 0.12), transparent 60%);
+      z-index: -1;
+      pointer-events: none;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background-color: rgba(34, 197, 94, 0.1);
+      border: 1px solid rgba(34, 197, 94, 0.15);
+      color: var(--color-accent-dark);
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 24px;
+    }
+
+    .hero-badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: var(--color-accent);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.6; }
+      50% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.6; }
+    }
+
+    h1 {
+      font-family: var(--font-display);
+      font-size: 48px;
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: var(--color-primary);
+      max-width: 800px;
+      margin: 0 auto 20px auto;
+    }
+
+    h1 span.highlight {
+      color: var(--color-accent-dark);
+      font-style: italic;
+      font-weight: 700;
+    }
+
+    .hero-subtitle {
+      font-size: 18px;
+      color: var(--color-text-body);
+      max-width: 640px;
+      margin: 0 auto 36px auto;
+      font-weight: 400;
+    }
+
+    /* Terminal Mockup */
+    .hero-terminal {
+      max-width: 680px;
+      margin: 40px auto 0 auto;
+      background-color: var(--bg-dark-term);
+      border-radius: 12px;
+      box-shadow: 0 30px 60px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      overflow: hidden;
+      text-align: left;
+    }
+
+    .terminal-header {
+      background-color: rgba(255, 255, 255, 0.03);
+      padding: 12px 16px;
       display: flex;
       align-items: center;
-      gap: 10px;
-      font-family: 'Fira Code', monospace;
-      font-size: 13px;
-      color: var(--text-muted);
+      gap: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
-    .status-indicator {
+
+    .terminal-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    .terminal-dot.red { background-color: #ef4444; }
+    .terminal-dot.yellow { background-color: #f59e0b; }
+    .terminal-dot.green { background-color: #10b981; }
+
+    .terminal-title {
+      color: rgba(255, 255, 255, 0.35);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      margin-left: 8px;
+    }
+
+    .terminal-body {
+      padding: 24px;
+      font-family: var(--font-mono);
+      font-size: 13.5px;
+      color: var(--text-term);
+      min-height: 240px;
+      overflow-y: auto;
+    }
+
+    .term-line {
+      margin-bottom: 6px;
+      white-space: pre-wrap;
+    }
+
+    .term-prompt {
+      color: var(--color-accent);
+      font-weight: bold;
+    }
+
+    .term-cmd {
+      color: #ffffff;
+    }
+
+    .term-success {
+      color: #34d399;
+    }
+
+    .term-info {
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .term-highlight {
+      color: #67e8f9;
+      font-weight: 600;
+    }
+
+    .term-muted {
+      color: rgba(255, 255, 255, 0.4);
+    }
+
+    .term-yellow {
+      color: #fbbf24;
+      font-weight: 600;
+    }
+
+    .term-cyan {
+      color: #22d3ee;
+      font-weight: 600;
+    }
+
+    .term-white-bold {
+      color: #ffffff;
+      font-weight: bold;
+    }
+
+    .term-link-underline {
+      color: #22d3ee;
+      text-decoration: underline;
+    }
+
+    /* Install Command Box */
+    .install-box {
+      max-width: 480px;
+      margin: 0 auto 36px auto;
+    }
+    
+    .install-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 8px;
+    }
+
+    .install-command {
+      background-color: var(--bg-dark-term);
+      border-radius: 10px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .install-command code {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: #34d399;
+      text-align: left;
+    }
+
+    .install-command code span {
+      color: rgba(255, 255, 255, 0.4);
+      margin-right: 6px;
+    }
+
+    .copy-btn {
+      background: none;
+      border: none;
+      color: rgba(255, 255, 255, 0.4);
+      cursor: pointer;
+      padding: 6px;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .copy-btn:hover {
+      color: #ffffff;
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .copy-btn svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Core Pillars (Features Checklist) */
+    .hero-features {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 20px;
+      margin-top: 36px;
+    }
+
+    .hero-feature-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      color: var(--color-text-muted);
+      font-weight: 500;
+    }
+
+    .hero-feature-item svg {
+      width: 16px;
+      height: 16px;
+      color: var(--color-accent-dark);
+    }
+
+    /* How It Works Section */
+    .how-it-works {
+      background-color: var(--bg-secondary);
+      padding: 96px 0;
+      border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .section-tag {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--color-accent-dark);
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: 36px;
+      font-weight: 800;
+      color: var(--color-primary);
+      text-align: center;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    .section-subtitle {
+      font-size: 16px;
+      color: var(--color-text-muted);
+      text-align: center;
+      max-width: 500px;
+      margin: 0 auto 60px auto;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+    }
+
+    .step-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 32px;
+      text-align: left;
+      position: relative;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .step-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.05);
+    }
+
+    .step-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background-color: rgba(34, 197, 94, 0.08);
+      color: var(--color-accent-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 24px;
+    }
+
+    .step-icon svg {
+      width: 22px;
+      height: 22px;
+    }
+
+    .step-num {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+    }
+
+    .step-title {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--color-primary);
+      margin-bottom: 12px;
+    }
+
+    .step-desc {
+      font-size: 14.5px;
+      color: var(--color-text-muted);
+    }
+
+    /* Security Section */
+    .security {
+      padding: 96px 0;
+    }
+
+    .security-inner {
+      display: grid;
+      grid-template-columns: 1fr 1.1fr;
+      gap: 60px;
+      align-items: center;
+    }
+
+    .security-content h2 {
+      font-family: var(--font-display);
+      font-size: 36px;
+      font-weight: 800;
+      color: var(--color-primary);
+      margin-bottom: 16px;
+      letter-spacing: -0.01em;
+      line-height: 1.2;
+    }
+
+    .security-content p {
+      font-size: 16px;
+      color: var(--color-text-muted);
+      margin-bottom: 32px;
+    }
+
+    .security-features {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .security-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      gap: 16px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.01);
+    }
+
+    .sec-badge {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      background-color: rgba(34, 197, 94, 0.06);
+      color: var(--color-accent-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .sec-badge svg {
+      width: 18px;
+      height: 18px;
+    }
+
+    .sec-title {
+      font-family: var(--font-sans);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--color-primary);
+      margin-bottom: 4px;
+    }
+
+    .sec-desc {
+      font-size: 13.5px;
+      color: var(--color-text-muted);
+    }
+
+    .security-visual {
+      background-color: var(--bg-dark-term);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .security-visual-title {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.3);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 16px;
       display: flex;
       align-items: center;
       gap: 6px;
     }
-    .status-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background-color: #6b7280;
-    }
-    .status-indicator.connected .status-dot {
-      background-color: #27c93f;
-      box-shadow: 0 0 8px #27c93f;
+
+    .security-visual-title svg {
+      width: 12px;
+      height: 12px;
     }
 
-    .header-actions {
+    /* Ready CTA Section */
+    .cta {
+      position: relative;
+      background: linear-gradient(135deg, #152219 0%, #08110b 100%);
+      color: #ffffff;
+      padding: 80px 0;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .cta::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(34, 197, 94, 0.1) 0%, transparent 70%);
+      z-index: 0;
+    }
+
+    .cta-inner {
+      position: relative;
+      z-index: 1;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .cta-title {
+      font-family: var(--font-display);
+      font-size: 36px;
+      font-weight: 800;
+      margin-bottom: 16px;
+      letter-spacing: -0.01em;
+    }
+
+    .cta-subtitle {
+      font-size: 16px;
+      color: rgba(255, 255, 255, 0.7);
+      margin-bottom: 36px;
+    }
+
+    .cta-buttons {
       display: flex;
-      align-items: center;
+      justify-content: center;
       gap: 16px;
+      flex-wrap: wrap;
     }
 
-    .action-link {
-      color: var(--text-muted);
-      font-size: 13px;
-      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      text-decoration: none;
-      cursor: pointer;
-      transition: color 0.2s;
-    }
-    .action-link:hover {
-      color: #92c99c;
-    }
-
-    .setup-overlay {
-      padding: 12px 20px;
-      background: rgba(0, 0, 0, 0.25);
-      display: flex;
-      gap: 12px;
+    .btn {
+      display: inline-flex;
       align-items: center;
+      justify-content: center;
+      padding: 12px 28px;
+      font-size: 14.5px;
+      font-weight: 600;
+      border-radius: 999px;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background-color: var(--color-accent);
+      color: var(--color-primary);
+    }
+
+    .btn-primary:hover {
+      background-color: #4ade80;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background-color: transparent;
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-secondary:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+      border-color: rgba(255, 255, 255, 0.4);
+    }
+
+    /* Footer */
+    footer {
+      background-color: #0f1612;
+      color: rgba(255, 255, 255, 0.8);
+      padding: 60px 0 40px 0;
+      border-top: 1px solid rgba(255, 255, 255, 0.03);
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 30px;
+      padding-bottom: 40px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
-    .setup-overlay label {
-      font-size: 12px;
-      color: var(--text-muted);
-      font-family: 'Fira Code', monospace;
-      white-space: nowrap;
-    }
-    .setup-overlay input {
-      flex: 1;
-      background: #0e1711;
-      border: 1px solid #233628;
-      color: #e5e7eb;
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-family: 'Fira Code', monospace;
-      font-size: 13px;
-      outline: none;
-    }
-    .setup-overlay input:focus {
-      border-color: #4ade80;
-    }
-    .setup-overlay button {
-      background: #233628;
-      color: #a3d9ad;
-      border: 1px solid #324e3a;
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    .setup-overlay button:hover {
-      background: #2e4735;
+
+    .footer-brand {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
 
-    #terminal-container {
-      flex: 1;
-      background-color: var(--bg-term);
-      padding: 12px 16px 16px 16px;
-      cursor: text;
+    .footer-logo {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 16px;
+      color: #34d399;
+      text-decoration: none;
     }
-    .xterm { height: 100%; }
-    .xterm-viewport {
-      background-color: var(--bg-term) !important;
+
+    .footer-tagline {
+      font-size: 13px;
+      color: rgba(255, 255, 255, 0.65);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+    }
+
+    .footer-link {
+      font-size: 13.5px;
+      color: rgba(255, 255, 255, 0.7);
+      text-decoration: none;
+      transition: color 0.2s ease;
+    }
+
+    .footer-link:hover {
+      color: #34d399;
+    }
+
+    .footer-bottom {
+      padding-top: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* Toast Notification */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background-color: var(--color-primary);
+      color: #ffffff;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+      z-index: 200;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .steps-grid {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
+      .security-inner {
+        grid-template-columns: 1fr;
+        gap: 40px;
+      }
+      h1 {
+        font-size: 36px;
+      }
+      .hero-subtitle {
+        font-size: 16px;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .nav-links {
+        display: none; /* simple collapse for mobile */
+      }
+      .footer-inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .footer-bottom {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+      }
     }
   </style>
 </head>
 <body>
-  <div class="mac-window">
-    <div class="window-header">
-      <div class="dots">
-        <div class="dot red"></div>
-        <div class="dot yellow"></div>
-        <div class="dot green"></div>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="nav-inner">
+      <a href="/" class="nav-logo">minishare ⚡</a>
+      <div class="nav-links">
+        <a href="#how-it-works" class="nav-link">How it works</a>
+        <a href="#security" class="nav-link">Security</a>
       </div>
-      <div class="header-center">
-        <span>minishare</span>
-        <span>—</span>
-        <span id="header-uuid">connecting...</span>
-        <div id="status-indicator" class="status-indicator">
-          <span class="status-dot"></span>
-          <span id="status-text">Disconnected</span>
+      <a href="/app" class="nav-btn">Get Started</a>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="hero container">
+    <div class="hero-badge">
+      <span class="hero-badge-dot"></span>
+      100% Peer-to-Peer · Secure WebRTC · Open Source
+    </div>
+    
+    <h1>Share your terminal, <span class="highlight">instantly.</span></h1>
+    <p class="hero-subtitle">
+      MiniShare lets colleagues connect and interact with your terminal session in real time. 
+      Securely streamed end-to-end with zero configuration, zero ports to open, and no intermediate storage.
+    </p>
+
+    <!-- Installation Command -->
+    <div class="install-box">
+      <p class="install-label">Build and Install CLI</p>
+      <div class="install-command">
+        <code id="cmd-text"><span>$</span>go install github.com/divamtech/minishare/cli@latest</code>
+        <button class="copy-btn" onclick="copyCommand()" aria-label="Copy installation command">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Core Pillars -->
+    <div class="hero-features">
+      <span class="hero-feature-item">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"></path></svg>
+        Direct P2P (WebRTC)
+      </span>
+      <span class="hero-feature-item">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"></path></svg>
+        End-to-End Encrypted
+      </span>
+      <span class="hero-feature-item">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"></path></svg>
+        Sudo & Command Blocking
+      </span>
+      <span class="hero-feature-item">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"></path></svg>
+        Free & Open Source
+      </span>
+    </div>
+
+    <!-- Interactive CSS/JS Terminal Simulation -->
+    <div class="hero-terminal">
+      <div class="terminal-header">
+        <div class="terminal-dot red"></div>
+        <div class="terminal-dot yellow"></div>
+        <div class="terminal-dot green"></div>
+        <div class="terminal-title">bash — minishare host</div>
+      </div>
+      <div class="terminal-body" id="term-body">
+        <div class="term-line"><span class="term-prompt">$ </span><span class="term-cmd" id="typing-cmd"></span></div>
+        <div class="term-line" id="term-output-1" style="display: none;"></div>
+        <div class="term-line" id="term-output-2" style="display: none;"></div>
+        <div class="term-line" id="term-output-3" style="display: none;"></div>
+        <div class="term-line" id="term-output-4" style="display: none;"></div>
+        <div class="term-line" id="term-output-5" style="display: none;"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works Section -->
+  <section id="how-it-works" class="how-it-works">
+    <div class="container">
+      <p class="section-tag">How it works</p>
+      <h2 class="section-title">Zero Config. Three Steps.</h2>
+      <p class="section-subtitle">The fastest path to secure terminal collaboration.</p>
+
+      <div class="steps-grid">
+        <!-- Step 1 -->
+        <div class="step-card">
+          <div class="step-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"></path>
+            </svg>
+          </div>
+          <p class="step-num">Step 01</p>
+          <h3 class="step-title">Install CLI</h3>
+          <p class="step-desc">Run our simple install command or build directly from source using Go. A self-contained executable, no external scripts or libraries needed.</p>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-card">
+          <div class="step-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z"></path>
+            </svg>
+          </div>
+          <p class="step-num">Step 02</p>
+          <h3 class="step-title">Share Session ID</h3>
+          <p class="step-desc">Start hosting by typing <code>minishare</code>. A secure session UUID is generated and copied to your clipboard. You can also persist a custom session name.</p>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-card">
+          <div class="step-icon">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m9.86-2.04a4.5 4.5 0 0 0-1.242-7.244l-4.5-4.5a4.5 4.5 0 0 0-6.364 6.364l1.757 1.757"></path>
+            </svg>
+          </div>
+          <p class="step-num">Step 03</p>
+          <h3 class="step-title">Connect Instantly</h3>
+          <p class="step-desc">Your teammate enters the UUID in the Web Terminal at <code>/app</code>, or connects directly from their own terminal using <code>minishare connect &lt;uuid&gt;</code> to establish a direct WebRTC P2P session.</p>
         </div>
       </div>
-      <div class="header-actions">
-        <a class="action-link" onclick="toggleServerConfig()">⚙️ Server</a>
-        <a class="action-link" onclick="disconnectSession()">Disconnect</a>
+    </div>
+  </section>
+
+  <!-- Security Section -->
+  <section id="security" class="security container">
+    <div class="security-inner">
+      <div class="security-content">
+        <p class="section-tag" style="text-align: left;">Security First</p>
+        <h2>Control what viewers can see and run.</h2>
+        <p>Terminal sharing has never been safer. MiniShare includes a built-in sandbox engine that intercepts user actions on the hosting end.</p>
+        
+        <div class="security-features">
+          <div class="security-card">
+            <div class="sec-badge">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285Z"></path>
+              </svg>
+            </div>
+            <div>
+              <h4 class="sec-title">Command Blocklist</h4>
+              <p class="sec-desc">Restrict dangerous shell commands. Simply run <code>minishare block cmd rm,sudo,reboot</code> to prevent them from executing.</p>
+            </div>
+          </div>
+
+          <div class="security-card">
+            <div class="sec-badge">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.884 2.223v6.12a2.25 2.25 0 0 0 2.25 2.25h15.75a2.25 2.25 0 0 0 2.25-2.25v-6.12a2.25 2.25 0 0 0-1.884-2.223m-16.5 0c0-.42.088-.828.246-1.201L5.251 3.75h13.498l1.755 4.828c.158.373.246.78.246 1.201m-16.5 0h16.5"></path>
+              </svg>
+            </div>
+            <div>
+              <h4 class="sec-title">Directory Access Control</h4>
+              <p class="sec-desc">Keep your sensitive files private. Prevent navigation or directory listing by blocking folders: <code>minishare block dir /etc,/var/log</code>.</p>
+            </div>
+          </div>
+
+          <div class="security-card">
+            <div class="sec-badge">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"></path>
+              </svg>
+            </div>
+            <div>
+              <h4 class="sec-title">Zero-Storage Signaling</h4>
+              <p class="sec-desc">Your session key and terminal content are encrypted. The signaling server is only a handshake mechanism, meaning zero data is stored or inspectable.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Security Terminal Simulation Visual -->
+      <div class="security-visual">
+        <div class="security-visual-title">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"></path>
+          </svg>
+          Active Security Blocklist Rules
+        </div>
+        <div class="terminal-body" style="min-height: auto; font-size: 13px;">
+          <div class="term-line"><span class="term-prompt">$ </span><span class="term-cmd">minishare block cmd rm,sudo,shutdown</span></div>
+          <div class="term-line term-success">🔒 [MiniShare] Command restriction applied: rm, sudo, shutdown</div>
+          <div class="term-line"><span class="term-prompt">$ </span><span class="term-cmd">minishare block dir /etc</span></div>
+          <div class="term-line term-success">🔒 [MiniShare] Folder restriction applied: /etc</div>
+          <div class="term-line"><span class="term-prompt">$ </span><span class="term-cmd">minishare config</span></div>
+          <div class="term-line term-info">────────────────────────────────────────</div>
+          <div class="term-line term-info">🔑 Local UUID:    <span class="term-highlight">team-pairing-room</span></div>
+          <div class="term-line term-info">🌐 Server URL:    <span class="term-highlight">http://localhost:8080</span></div>
+          <div class="term-line term-info">🚫 Blocked Cmds:  <span class="term-highlight">rm, sudo, shutdown</span></div>
+          <div class="term-line term-info">🚫 Blocked Paths: <span class="term-highlight">/etc</span></div>
+          <div class="term-line term-info">────────────────────────────────────────</div>
+        </div>
       </div>
     </div>
+  </section>
 
-    <!-- Server Configuration Overlay Bar -->
-    <div id="server-bar" class="setup-overlay" style="display: none;">
-      <label>Server URL:</label>
-      <input type="text" id="server-url-input" placeholder="http://localhost:8080" />
-      <button onclick="saveServerURL()">Save Server</button>
-      <button onclick="resetServerURL()" style="background: transparent; border-color: #444; color: #aaa;">Reset</button>
+  <!-- Ready to Share CTA -->
+  <section class="cta">
+    <div class="cta-inner">
+      <h2 class="cta-title">Ready to share your terminal?</h2>
+      <p class="cta-subtitle">Instantly start a session and invite your team. Build from source or run via Go.</p>
+      <div class="cta-buttons">
+        <a href="/app" class="btn btn-primary">Open Web Client</a>
+        <a href="https://github.com/divamtech/minishare" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+      </div>
     </div>
+  </section>
 
-    <!-- Session UUID Input Overlay Bar -->
-    <div id="setup-bar" class="setup-overlay" style="display: flex;">
-      <input type="text" id="uuid-input" placeholder="Paste Session UUID here..." />
-      <button onclick="startManualConnect()">Connect P2P</button>
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <a href="#" class="footer-logo">minishare ⚡</a>
+          <p class="footer-tagline">Real-time peer-to-peer terminal sharing.</p>
+          <p class="footer-owner" style="font-size: 12.5px; margin-top: 6px; color: rgba(255, 255, 255, 0.65);">
+            Owned by <a href="https://divamtech.com/" target="_blank" rel="noopener noreferrer" style="color: #34d399; text-decoration: none; font-weight: 600;">divamtech.com</a>
+          </p>
+        </div>
+        <div class="footer-links">
+          <a href="#how-it-works" class="footer-link">How it works</a>
+          <a href="#security" class="footer-link">Security</a>
+          <a href="/app" class="footer-link">Web Client</a>
+          <a href="https://github.com/divamtech/minishare" class="footer-link" target="_blank" rel="noopener noreferrer">GitHub</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p>&copy; 2026 MiniShare. Open-source under MIT License.</p>
+        <p>Built with ❤️ for developer collaboration</p>
+      </div>
     </div>
+  </footer>
 
-    <div id="terminal-container"></div>
+  <!-- Toast Notification System -->
+  <div id="toast" class="toast">
+    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; color: var(--color-accent);">
+      <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"></path>
+    </svg>
+    <span id="toast-message">Command copied!</span>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
-
   <script>
-    const term = new Terminal({
-      cursorBlink: true,
-      fontFamily: "'Fira Code', monospace",
-      fontSize: 14,
-      theme: {
-        background: "#152219",
-        foreground: "#d1d5db",
-        cursor: "#4ade80"
-      }
-    });
-    const fitAddon = new FitAddon.FitAddon();
-    term.loadAddon(fitAddon);
+    // Copy command functionality
+    function copyCommand() {
+      const text = document.getElementById("cmd-text").textContent.replace('$', '');
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Command copied to clipboard!");
+      }).catch(err => {
+        console.error("Could not copy text: ", err);
+      });
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById("toast");
+      document.getElementById("toast-message").textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => {
+        toast.classList.remove("show");
+      }, 3000);
+    }
+
+    // Interactive Terminal Simulation Script
+    const terminalLines = [
+      { text: "minishare", type: "input", delay: 100 },
+      { html: '<span class="term-muted">[MiniShare] Connecting to signaling server: http://localhost:8080</span>', targetId: "term-output-1", delay: 600 },
+      { html: '<br><span class="term-success">⚡ MiniShare Host Session Live</span>', targetId: "term-output-2", delay: 300 },
+      { html: '🔑 <span class="term-white-bold">Session UUID:</span> <span class="term-cyan">5e8c1b9a-41f8-40a2-92e1-8889a74421b8</span><br>' +
+              '💻 <span class="term-white-bold">Connect via CLI:</span> <span class="term-yellow">minishare connect 5e8c1b9a-41f8-40a2-92e1-8889a74421b8</span><br>' +
+              '🌐 <span class="term-white-bold">Connect via Web Browser:</span> <span class="term-link-underline">http://localhost:8080/app/5e8c1b9a-41f8-40a2-92e1-8889a74421b8</span><br>' +
+              '<span class="term-success">👉 Session UUID copied to clipboard automatically!</span>', targetId: "term-output-3", delay: 400 },
+      { html: '<br><span class="term-muted">Waiting for peer to connect...</span>', targetId: "term-output-4", delay: 300 },
+      { html: '<br><span class="term-success">✓ Peer connected successfully (Web Browser or CLI client)</span><br>' +
+              '<span class="term-success">Session active — terminal streaming peer-to-peer...</span>', targetId: "term-output-5", delay: 1800 }
+    ];
+
+    let currentLineIndex = 0;
     
-    const termContainer = document.getElementById('terminal-container');
-    term.open(termContainer);
-    fitAddon.fit();
-
-    window.addEventListener('resize', () => fitAddon.fit());
-    
-    // Focus terminal only when clicking inside mac-window outside input/buttons
-    document.querySelector('.mac-window').addEventListener('click', (e) => {
-      if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
-        term.focus();
-      }
-    });
-
-    // Support Enter key inside UUID input box
-    document.getElementById('uuid-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        startManualConnect();
-      }
-    });
-
-    // Support Enter key inside Server URL input box
-    document.getElementById('server-url-input').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        saveServerURL();
-      }
-    });
-
-    // Handle Ctrl+] keypress explicitly in xterm
-    term.attachCustomKeyEventHandler((event) => {
-      if (event.ctrlKey && (event.key === ']' || event.keyCode === 221)) {
-        if (event.type === 'keydown') {
-          term.writeln('\r\n\x1b[1;33m[MiniShare] Detached via Ctrl+].\x1b[0m');
-          disconnectSession();
+    function typeCommand(text, element, callback) {
+      let charIndex = 0;
+      element.textContent = "";
+      const timer = setInterval(() => {
+        if (charIndex < text.length) {
+          element.textContent += text.charAt(charIndex);
+          charIndex++;
+        } else {
+          clearInterval(timer);
+          if (callback) callback();
         }
-        return false;
-      }
-      return true;
-    });
-
-    let pc = null;
-    let dataChannel = null;
-    let isConnected = false;
-    let inputBuffer = "";
-    const textDecoder = new TextDecoder();
-
-    // -----------------------------------------------------------------
-    // SIGNALING SERVER URL CONFIGURATION
-    // -----------------------------------------------------------------
-    function getStoredServerURL() {
-      const params = new URLSearchParams(window.location.search);
-      const urlParam = params.get('server');
-      if (urlParam) return urlParam.trim();
-
-      const saved = localStorage.getItem('minishare_server_url');
-      if (saved) return saved.trim();
-
-      return window.location.origin;
+      }, 80);
     }
 
-    function getSignalingURL(endpoint) {
-      let base = document.getElementById('server-url-input').value.trim();
-      if (!base) {
-        base = getStoredServerURL();
-      }
-      base = base.replace(/\/+$/, '');
-      if (!base.startsWith('http://') && !base.startsWith('https://')) {
-        base = 'http://' + base;
-      }
-      return `${base}${endpoint}`;
-    }
-
-    function initServerConfig() {
-      const current = getStoredServerURL();
-      document.getElementById('server-url-input').value = current;
-    }
-    initServerConfig();
-
-    function toggleServerConfig() {
-      const bar = document.getElementById('server-bar');
-      bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
-      if (bar.style.display === 'flex') {
-        document.getElementById('server-url-input').focus();
-      }
-    }
-
-    function saveServerURL() {
-      const val = document.getElementById('server-url-input').value.trim();
-      if (!val) {
-        resetServerURL();
-        return;
-      }
-      let url = val;
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        url = 'http://' + url;
-      }
-      localStorage.setItem('minishare_server_url', url);
-      document.getElementById('server-url-input').value = url;
-      document.getElementById('server-bar').style.display = 'none';
-      term.clear();
-      term.writeln(`\x1b[1;32m[MiniShare] Signaling server URL saved: ${url}\x1b[0m\r\n`);
-      if (!isConnected) {
-        showOfflinePrompt();
-      }
-    }
-
-    function resetServerURL() {
-      localStorage.removeItem('minishare_server_url');
-      const defaultURL = window.location.origin;
-      document.getElementById('server-url-input').value = defaultURL;
-      document.getElementById('server-bar').style.display = 'none';
-      term.clear();
-      term.writeln(`\x1b[1;32m[MiniShare] Signaling server URL reset to default: ${defaultURL}\x1b[0m\r\n`);
-      if (!isConnected) {
-        showOfflinePrompt();
-      }
-    }
-
-    // -----------------------------------------------------------------
-    // TERMINAL INPUT & P2P CONNECTION
-    // -----------------------------------------------------------------
-    function showOfflinePrompt() {
-      const serverURL = getSignalingURL('');
-      term.writeln('\x1b[1;34m⚡ MiniShare Web Viewer Ready\x1b[0m');
-      term.writeln(`Server: \x1b[36m${serverURL}\x1b[0m`);
-      term.writeln('Paste or type a Session UUID below (or use clear/reset):');
-      term.write('\r\n\x1b[1;32m> \x1b[0m');
-    }
-
-    term.onData((key) => {
-      if (key === '\x1d') { // Ctrl+]
-        term.writeln('\r\n\x1b[1;33m[MiniShare] Detached via Ctrl+].\x1b[0m');
-        disconnectSession();
+    function runTerminalSimulation() {
+      if (currentLineIndex >= terminalLines.length) {
+        // Reset after 8 seconds
+        setTimeout(() => {
+          document.getElementById("typing-cmd").textContent = "";
+          document.getElementById("term-output-1").style.display = "none";
+          document.getElementById("term-output-2").style.display = "none";
+          document.getElementById("term-output-3").style.display = "none";
+          document.getElementById("term-output-4").style.display = "none";
+          document.getElementById("term-output-5").style.display = "none";
+          currentLineIndex = 0;
+          runTerminalSimulation();
+        }, 8000);
         return;
       }
 
-      if (isConnected && dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(key);
-        return;
-      }
-
-      if (!isConnected) {
-        if (key === '\r' || key === '\n') {
-          const cmd = inputBuffer.trim();
-          inputBuffer = "";
-
-          if (cmd === 'clear' || cmd === 'cls' || cmd === 'reset') {
-            term.clear();
-            showOfflinePrompt();
-            return;
-          }
-
-          term.writeln('');
-          if (cmd) {
-            document.getElementById('header-uuid').textContent = cmd.substring(0, 8) + '...';
-            connectSession(cmd);
-          } else {
-            term.write('\x1b[1;32m> \x1b[0m');
-          }
-        } else if (key === '\x7f' || key === '\b') {
-          if (inputBuffer.length > 0) {
-            inputBuffer = inputBuffer.slice(0, -1);
-            term.write('\b \b');
-          }
-        } else if (key.length === 1 && key.charCodeAt(0) >= 32) {
-          inputBuffer += key;
-          term.write(key);
-        } else if (key.length > 1) {
-          const cleanKey = key.replace(/[\r\n]/g, '').trim();
-          inputBuffer += cleanKey;
-          term.write(cleanKey);
+      const line = terminalLines[currentLineIndex];
+      setTimeout(() => {
+        if (line.type === "input") {
+          typeCommand(line.text, document.getElementById("typing-cmd"), () => {
+            currentLineIndex++;
+            runTerminalSimulation();
+          });
+        } else {
+          const el = document.getElementById(line.targetId);
+          el.innerHTML = line.html;
+          el.style.display = "block";
+          currentLineIndex++;
+          runTerminalSimulation();
         }
-      }
+      }, line.delay);
+    }
+
+    // Start simulation after page loads
+    window.addEventListener("DOMContentLoaded", () => {
+      setTimeout(runTerminalSimulation, 1000);
     });
-
-    function getUUIDFromURL() {
-      const path = window.location.pathname;
-      if (path.startsWith('/app/')) {
-        const parts = path.split('/');
-        if (parts.length >= 3 && parts[2].trim()) {
-          return parts[2].trim();
-        }
-      }
-      if (window.location.hash) {
-        return window.location.hash.substring(1).trim();
-      }
-      return "";
-    }
-
-    const initialUUID = getUUIDFromURL();
-    if (initialUUID) {
-      document.getElementById('header-uuid').textContent = initialUUID.substring(0, 8) + '...';
-      connectSession(initialUUID);
-    } else {
-      document.getElementById('header-uuid').textContent = 'no session';
-      showOfflinePrompt();
-    }
-
-    function startManualConnect() {
-      const input = document.getElementById('uuid-input').value.trim();
-      if (!input) {
-        alert('Please enter a valid Session UUID!');
-        return;
-      }
-      document.getElementById('header-uuid').textContent = input.substring(0, 8) + '...';
-      connectSession(input);
-    }
-
-    function markDisconnected() {
-      isConnected = false;
-      const statusInd = document.getElementById('status-indicator');
-      statusInd.className = "status-indicator";
-      document.getElementById('status-text').textContent = 'Disconnected';
-      document.getElementById('setup-bar').style.display = 'flex';
-    }
-
-    async function connectSession(uuid) {
-      const targetServer = getSignalingURL('');
-      term.writeln(`\x1b[36m[MiniShare] Connecting to signaling server: ${targetServer}...\x1b[0m`);
-
-      try {
-        // 1. Fetch offer from signaling server C
-        const resp = await fetch(getSignalingURL(`/api/session/${uuid}/offer`));
-        if (!resp.ok) {
-          const errText = await resp.text();
-          throw new Error(errText || "Session not found or expired");
-        }
-        const data = await resp.json();
-        const offerSDP = decodePayload(data.offer);
-
-        // 2. Setup WebRTC PeerConnection
-        pc = new RTCPeerConnection({
-          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-        });
-
-        pc.onconnectionstatechange = () => {
-          if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-            markDisconnected();
-            term.writeln('\r\n\x1b[31m[MiniShare] Remote host disconnected.\x1b[0m\r\n');
-            showOfflinePrompt();
-          }
-        };
-
-        pc.oniceconnectionstatechange = () => {
-          if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'closed') {
-            markDisconnected();
-          }
-        };
-
-        pc.ondatachannel = (event) => {
-          dataChannel = event.channel;
-          dataChannel.binaryType = 'arraybuffer';
-
-          dataChannel.onopen = () => {
-            isConnected = true;
-            const statusInd = document.getElementById('status-indicator');
-            statusInd.className = "status-indicator connected";
-            document.getElementById('status-text').textContent = 'Connected';
-            document.getElementById('setup-bar').style.display = 'none';
-            term.clear();
-            term.focus();
-            dataChannel.send('\r');
-          };
-
-          dataChannel.onclose = () => {
-            markDisconnected();
-            term.writeln('\r\n\x1b[31m[MiniShare] WebRTC session closed.\x1b[0m\r\n');
-            showOfflinePrompt();
-          };
-
-          dataChannel.onmessage = (msg) => {
-            if (typeof msg.data === 'string') {
-              term.write(msg.data);
-            } else if (msg.data instanceof ArrayBuffer) {
-              term.write(textDecoder.decode(new Uint8Array(msg.data)));
-            } else if (msg.data instanceof Blob) {
-              msg.data.arrayBuffer().then(buf => {
-                term.write(textDecoder.decode(new Uint8Array(buf)));
-              });
-            }
-          };
-        };
-
-        await pc.setRemoteDescription(new RTCSessionDescription(offerSDP));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-
-        // Wait for ICE gathering
-        await new Promise((resolve) => {
-          if (pc.iceGatheringState === 'complete') resolve();
-          else {
-            const checkCandidate = (e) => {
-              if (!e.candidate) {
-                pc.removeEventListener('icecandidate', checkCandidate);
-                resolve();
-              }
-            };
-            pc.addEventListener('icecandidate', checkCandidate);
-          }
-        });
-
-        // 3. Post answer back to signaling server C
-        const encodedAnswer = encodePayload(pc.localDescription);
-        const postResp = await fetch(getSignalingURL(`/api/session/${uuid}/answer`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ answer: encodedAnswer })
-        });
-
-        if (!postResp.ok) {
-          throw new Error("Failed to send answer to signaling server");
-        }
-
-        term.writeln('\x1b[32m[MiniShare] Answer sent! Establishing P2P link...\x1b[0m');
-
-      } catch (err) {
-        term.writeln(`\r\n\x1b[31m[Error] ${err.message}\x1b[0m\r\n`);
-        markDisconnected();
-        showOfflinePrompt();
-      }
-    }
-
-    function disconnectSession() {
-      if (dataChannel) {
-        dataChannel.close();
-      }
-      if (pc) {
-        pc.close();
-      }
-      markDisconnected();
-      term.writeln('\r\n\x1b[33m[MiniShare] Disconnected from remote session.\x1b[0m\r\n');
-      showOfflinePrompt();
-    }
-
-    function encodePayload(obj) {
-      return btoa(JSON.stringify(obj));
-    }
-
-    function decodePayload(str) {
-      str = str.trim().replace(/\s+/g, '');
-      return JSON.parse(atob(str));
-    }
   </script>
 </body>
 </html>

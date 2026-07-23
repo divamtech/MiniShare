@@ -1,0 +1,26 @@
+# Binaries
+minishare
+minishare-host
+minishare-viewer
+*.exe
+*.dll
+*.so
+*.dylib
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log

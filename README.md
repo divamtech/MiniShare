@@ -3,88 +3,126 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/badge/Go-1.23%2B-blue.svg)](https://golang.org)
 
-**MiniShare** is a lightweight, zero-infrastructure terminal-sharing CLI application written in Go. It enables secure, real-time P2P terminal sharing directly between two machines using WebRTC DataChannels and pseudo-terminals (`pty`).
+**MiniShare** is an open-source, real-time P2P terminal sharing tool and cloud signaling server written in Go. It enables secure, encrypted terminal sharing directly between machines using WebRTC DataChannels.
 
-No signaling servers, cloud services, databases, or user accounts are required.
-
----
-
-## 🚀 Features
-
-- **⚡ DEFLATE Compression**: Offer & Answer SDP payloads are compressed using DEFLATE, reducing code lengths by **75%+** (~280 characters).
-- **📋 Auto-Clipboard Integration**: Automatically copies connection codes to your system clipboard (`pbcopy` on macOS / `xclip` on Linux / `clip` on Windows).
-- **⏎ One-Key Clipboard Input**: When prompted for a code, simply press **Enter** to read directly from your system clipboard.
-- **⌨️ Live Command Logging**: The host terminal logs viewer commands in real-time as they execute.
-- **🔌 Instant Hotkey Detach**: Press `Ctrl+]` in the viewer terminal to detach from the remote host at any time.
-- **🛡 Input Sanitization**: Automatically strips line-breaks, spaces, and quotes introduced by terminal wrapping.
+Terminal data flows **100% peer-to-peer (P2P)** with End-to-End Encryption — the cloud signaling server only handles initial session UUID discovery and never touches terminal data.
 
 ---
 
-## 📦 Setup Instructions
+## 📂 Repository Architecture
 
-1. Clone the repository:
-   ```bash
-   git clone git@github.com:divamtech/MiniShare.git
-   cd MiniShare
-   ```
+MiniShare is organized into two completely decoupled Go modules:
 
-2. Download module dependencies:
-   ```bash
-   go mod tidy
-   ```
-
----
-
-## 💻 How to Run
-
-### Step 1: Start the Host Session
-On the machine whose terminal you want to share:
-
-```bash
-go run main.go
+```text
+MiniShare/
+├── cli/                        # 💻 Terminal CLI Application (Host & Viewer)
+│   ├── main.go                 # Unified CLI Binary
+│   ├── config.go               # Persistent Config (~/.minishare/config.json)
+│   ├── go.mod                  # Independent CLI Go module
+│   ├── go.sum
+│   └── README.md
+│
+├── server/                     # 🌐 Cloud Signaling Server & Web SPA
+│   ├── main.go                 # Pure Go HTTP Signaling Server
+│   ├── index.html              # Embedded Web Terminal SPA (xterm.js)
+│   ├── go.mod                  # Independent Server Go module
+│   ├── Dockerfile              # Container deployment for Cloud (Render/Fly.io/AWS)
+│   └── README.md
+│
+├── LICENSE
+├── README.md                   # Main Documentation
+└── .gitignore
 ```
 
-1. The host generates a compressed code and automatically copies it to your system clipboard:
-   ```text
-   === Share this code with the viewer ===
-   vJRLb9pOFMW_ysjLv...
-   === end code ===
-   👉 Code copied to system clipboard automatically!
-   ```
-2. Keep this host terminal open.
-
 ---
 
-### Step 2: Start the Viewer Session
-On the machine that wants to view/control the remote terminal:
+## 🚀 Quick Start
+
+### 1. Build the CLI Binary
 
 ```bash
-go run ./viewer/main.go
+cd cli
+go build -o minishare main.go
 ```
 
-1. Press **Enter** (it automatically reads the host code from your system clipboard) or paste it manually.
-2. The viewer will generate an answer code and copy it to your system clipboard automatically:
-   ```text
-   === Send this code back to the host ===
-   tJJda_s2GMW_ivDl...
-   === end code ===
-   👉 Code copied to system clipboard automatically!
-   ```
+---
+
+### 2. Configure Signaling Server (Optional)
+
+By default, MiniShare CLI connects to `http://localhost:8080`.
+
+- **Set a custom signaling server**:
+  ```bash
+  ./minishare server http://localhost:8080
+  # [MiniShare] Signaling server set to: http://localhost:8080
+  ```
+
+- **Reset to default signaling server**:
+  ```bash
+  ./minishare server reset
+  # [MiniShare] Signaling server reset to default: http://localhost:8080
+  ```
 
 ---
 
-### Step 3: Complete Connection
-In the **Host** terminal, simply press **Enter** (to read the viewer's answer code from your clipboard).
+### 3. Start Host Session (Computer A)
 
-The WebRTC P2P DataChannel will open instantly, connecting the shell session!
+```bash
+./minishare
+```
+
+Output:
+```text
+[MiniShare] Connecting to signaling server: http://localhost:8080
+
+⚡ MiniShare Host Session Live
+🔑 Session UUID: 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
+💻 Connect via CLI: minishare connect 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
+🌐 Connect via Web Browser: http://localhost:8080/#7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
+👉 Session UUID copied to clipboard automatically!
+```
 
 ---
 
-## 💡 How Signaling Works
+### 4. Connect as Viewer (Computer B)
 
-WebRTC requires an exchange of Session Description Protocol (SDP) payloads (containing encryption fingerprints and NAT ICE candidate IP addresses) to establish a direct P2P link.
+#### Option A: CLI Viewer (Computer B)
+```bash
+./minishare connect 7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
+```
+*(Press `Ctrl+]` or type `exit` to detach at any time)*
 
-MiniShare is built to be **100% serverless, private, and zero-infrastructure**. Without a central cloud server, you (the user) act as the human signaling mechanism by exchanging the compressed SDP payloads directly via clipboard or copy-paste.
+#### Option B: Web Browser Viewer (Zero Installation Required!)
+Open the Web Link in Chrome, Safari, or Firefox:
+```text
+http://localhost:8080/#7f8a91b2-3c4d-4e5f-a6b7-8c9d0e1f2a3b
+```
+An interactive terminal renders directly inside your browser window using `xterm.js` connected live to Computer A via WebRTC P2P!
+
+---
+
+## 🌐 Running & Deploying the Signaling Server
+
+```bash
+cd server
+go run main.go --port 8080
+```
+
+To deploy to Docker / Render / Fly.io / AWS / Railway:
+```bash
+docker build -t minishare-server ./server
+docker run -p 8080:8080 minishare-server
+```
+
+---
+
+## 🗺️ Future Architecture Roadmap
+
+We are actively expanding MiniShare with advanced networking features:
+
+- **⚡ Ngrok-style Tunneling**: Global HTTP, Database (PostgreSQL, MySQL, Redis), and TCP/UDP port forwarding tunneled directly through WebRTC P2P DataChannels.
+- **🔐 Multi-Factor Session Auth**: Optional PIN / passphrase protection for shared sessions.
+- **👥 Multi-Viewer Broadcast**: Shared read-only terminal sessions for live pairing, teaching, and demos.
 
 ---
 

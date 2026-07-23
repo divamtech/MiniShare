@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniShare Web Terminal ⚡</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0b0f19;
+      --bg-card: #111827;
+      --border-color: #1f2937;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --success: #10b981;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-badge {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    input[type="text"] {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-family: 'Fira Code', monospace;
+      font-size: 14px;
+      width: 320px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    input[type="text"]:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    }
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button:hover { background: var(--primary-hover); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status-tag {
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: #1f2937;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6b7280;
+    }
+    .status-tag.connected .status-dot { background: var(--success); }
+    .status-tag.connected { color: var(--success); background: rgba(16, 185, 129, 0.1); }
+    #terminal-container {
+      flex: 1;
+      background-color: #0d1117;
+      padding: 8px;
+    }
+    .xterm { height: 100%; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo-group">
+      <span class="logo-badge">⚡ MiniShare</span>
+      <span class="title">Web Terminal Viewer</span>
+    </div>
+    <div class="controls">
+      <div id="status" class="status-tag">
+        <span class="status-dot"></span> Disconnected
+      </div>
+      <input type="text" id="uuid-input" placeholder="Enter Session UUID..." />
+      <button id="connect-btn" onclick="connectSession()">Connect P2P</button>
+    </div>
+  </header>
+
+  <div id="terminal-container"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+  <script>
+    const term = new Terminal({
+      cursorBlink: true,
+      fontFamily: "'Fira Code', monospace",
+      fontSize: 14,
+      theme: { background: "#0d1117" }
+    });
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal-container'));
+    fitAddon.fit();
+    window.addEventListener('resize', () => fitAddon.fit());
+
+    term.writeln('\x1b[1;34m⚡ MiniShare Web Viewer Ready\x1b[0m');
+    term.writeln('Enter a Session UUID above and click Connect P2P.\r\n');
+
+    // Auto-populate UUID from URL hash if available (e.g. #uuid)
+    if (window.location.hash) {
+      document.getElementById('uuid-input').value = window.location.hash.substring(1).trim();
+    }
+
+    let pc = null;
+    let dataChannel = null;
+
+    async function connectSession() {
+      const uuid = document.getElementById('uuid-input').value.trim();
+      if (!uuid) {
+        alert("Please enter a valid Session UUID!");
+        return;
+      }
+
+      const btn = document.getElementById('connect-btn');
+      const statusTag = document.getElementById('status');
+      btn.disabled = true;
+      btn.textContent = 'Connecting...';
+      term.writeln(`\r\n\x1b[36m[MiniShare] Fetching offer for session: ${uuid}...\x1b[0m`);
+
+      try {
+        // 1. Fetch offer from signaling server C
+        const resp = await fetch(`/api/session/${uuid}/offer`);
+        if (!resp.ok) {
+          throw new Error(await resp.text() || "Session not found");
+        }
+        const data = await resp.json();
+        const offerSDP = decodePayload(data.offer);
+
+        // 2. Setup WebRTC PeerConnection
+        pc = new RTCPeerConnection({
+          iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        });
+
+        pc.ondatachannel = (event) => {
+          dataChannel = event.channel;
+          dataChannel.onopen = () => {
+            statusTag.className = "status-tag connected";
+            statusTag.innerHTML = '<span class="status-dot"></span> Connected P2P';
+            btn.textContent = 'Connected';
+            term.clear();
+          };
+          dataChannel.onclose = () => {
+            statusTag.className = "status-tag";
+            statusTag.innerHTML = '<span class="status-dot"></span> Disconnected';
+            term.writeln('\r\n\x1b[31m[MiniShare] WebRTC session closed.\x1b[0m');
+            btn.disabled = false;
+            btn.textContent = 'Connect P2P';
+          };
+          dataChannel.onmessage = (msg) => {
+            term.write(msg.data);
+          };
+        };
+
+        // Forward keyboard input from xterm.js to WebRTC DataChannel
+        term.onData((key) => {
+          if (dataChannel && dataChannel.readyState === 'open') {
+            dataChannel.send(key);
+          }
+        });
+
+        await pc.setRemoteDescription(offerSDP);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        // Wait for ICE gathering
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === 'complete') resolve();
+          else pc.onicecandidate = (e) => { if (!e.candidate) resolve(); };
+        });
+
+        // 3. Post answer back to signaling server C
+        const encodedAnswer = encodePayload(pc.localDescription);
+        await fetch(`/api/session/${uuid}/answer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answer: encodedAnswer })
+        });
+
+        term.writeln('\x1b[32m[MiniShare] Answer sent! Establishing direct P2P data channel...\x1b[0m');
+
+      } catch (err) {
+        term.writeln(`\r\n\x1b[31m[Error] ${err.message}\x1b[0m`);
+        btn.disabled = false;
+        btn.textContent = 'Connect P2P';
+      }
+    }
+
+    function encodePayload(obj) {
+      return btoa(JSON.stringify(obj));
+    }
+
+    function decodePayload(str) {
+      return JSON.parse(atob(str));
+    }
+  </script>
+</body>
+</html>

@@ -1,4 +1,4 @@
-module minishare
+module github.com/divamtech/minishare-cli
 
 go 1.23.5
 

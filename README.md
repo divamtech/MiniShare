@@ -16,8 +16,7 @@ MiniShare is organized into two completely decoupled Go modules:
 ```text
 MiniShare/
 ├── cli/                        # 💻 Terminal CLI Application (Host & Viewer)
-│   ├── main.go                 # Unified CLI Binary
-│   ├── config.go               # Persistent Config (~/.minishare/config.json)
+│   ├── main.go                 # Self-contained Unified CLI Binary
 │   ├── go.mod                  # Independent CLI Go module
 │   ├── go.sum
 │   └── README.md
@@ -36,14 +35,16 @@ MiniShare/
 
 ---
 
-## 🚀 Quick Start
+## 📦 Dependency Installation & Quick Start
 
-### 1. Build the CLI Binary
+### 1. Install CLI Dependencies & Build
 
 ```bash
 cd cli
+go mod tidy
 go build -o minishare main.go
 ```
+*(Or run directly with `go run main.go`)*
 
 ---
 
@@ -105,6 +106,7 @@ An interactive terminal renders directly inside your browser window using `xterm
 
 ```bash
 cd server
+go mod tidy
 go run main.go --port 8080
 ```
 

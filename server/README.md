@@ -11,12 +11,22 @@ This package contains the standalone Go **Signaling Server** and embedded **Web 
 
 ---
 
-## Local Setup & Execution
+## Installation & Local Execution
 
-```bash
-cd server
-go run main.go --port 8080
-```
+1. Navigate to the `server/` directory:
+   ```bash
+   cd server
+   ```
+
+2. Install/verify module dependencies:
+   ```bash
+   go mod tidy
+   ```
+
+3. Run the signaling server:
+   ```bash
+   go run main.go --port 8080
+   ```
 
 Open `http://localhost:8080` in your web browser to test the Web Terminal viewer interface!
 

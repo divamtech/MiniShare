@@ -23,6 +23,7 @@
       background-color: var(--bg-body);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -34,6 +35,8 @@
       width: 92%;
       max-width: 1100px;
       height: 75vh;
+      height: 75dvh;
+      min-height: 300px;
       background-color: var(--bg-term);
       border-radius: 16px;
       box-shadow: 0 24px 48px rgba(0, 0, 0, 0.28);
@@ -112,6 +115,55 @@
     @media (max-width: 600px) {
       .nav-links {
         display: none;
+      }
+      body {
+        padding: 60px 8px 8px 8px;
+      }
+      .mac-window {
+        width: 100%;
+        height: calc(100vh - 68px);
+        height: calc(100dvh - 68px);
+        border-radius: 10px;
+      }
+      .window-header {
+        height: 38px;
+        padding: 0 10px;
+      }
+      .header-center {
+        font-size: 11px;
+        gap: 6px;
+      }
+      .header-actions {
+        gap: 8px;
+      }
+      .action-link {
+        font-size: 11px;
+      }
+      .setup-overlay {
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        gap: 8px;
+      }
+      .setup-overlay input {
+        min-width: 0;
+        width: 100%;
+        font-size: 12px;
+        padding: 6px 10px;
+      }
+      .setup-overlay button {
+        font-size: 12px;
+        padding: 6px 12px;
+      }
+      #terminal-container {
+        padding: 8px 10px 10px 10px;
+      }
+      .dots {
+        gap: 6px;
+        width: 60px;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
       }
     }
     .window-header {
@@ -306,6 +358,7 @@
     term.open(termContainer);
     fitAddon.fit();
 
+    // Resize terminal on window resize
     window.addEventListener('resize', () => fitAddon.fit());
     
     // Focus terminal only when clicking inside mac-window outside input/buttons
@@ -562,6 +615,8 @@
             document.getElementById('setup-bar').style.display = 'none';
             term.clear();
             term.focus();
+            // Send initial terminal dimensions
+            sendResize();
             dataChannel.send('\r');
           };
 
@@ -634,6 +689,30 @@
       term.writeln('\r\n\x1b[33m[MiniShare] Disconnected from remote session.\x1b[0m\r\n');
       showOfflinePrompt();
     }
+
+    // Send terminal resize control message (SOH + JSON) over data channel
+    function sendResize() {
+      if (dataChannel && dataChannel.readyState === 'open') {
+        const msg = JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows });
+        const soh = new Uint8Array([0x01]);
+        const payload = new TextEncoder().encode(msg);
+        const combined = new Uint8Array(soh.length + payload.length);
+        combined.set(soh);
+        combined.set(payload, soh.length);
+        dataChannel.send(combined);
+      }
+    }
+
+    // Listen for terminal resize events and send dimensions to host
+    term.onResize(({ cols, rows }) => {
+      sendResize();
+    });
+
+    // Re-fit terminal on window resize and notify host
+    window.removeEventListener('resize', () => fitAddon.fit());
+    window.addEventListener('resize', () => {
+      fitAddon.fit();
+    });
 
     function encodePayload(obj) {
       return btoa(JSON.stringify(obj));

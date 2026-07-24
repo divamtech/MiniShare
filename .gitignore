@@ -52,3 +52,7 @@ Thumbs.db
 # Environment files
 .env
 .env.local
+
+# Per-user runtime config (written to the OS config dir, never shipped)
+cli/config.json
+minishare_config.json

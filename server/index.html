@@ -983,7 +983,7 @@
           <div class="term-line"><span class="term-prompt">$ </span><span class="term-cmd">minishare config</span></div>
           <div class="term-line term-info">────────────────────────────────────────</div>
           <div class="term-line term-info">🔑 Local UUID:    <span class="term-highlight">team-pairing-room</span></div>
-          <div class="term-line term-info">🌐 Server URL:    <span class="term-highlight">http://localhost:8080</span></div>
+          <div class="term-line term-info">🌐 Server URL:    <span class="term-highlight">https://minishare.divamtech.com</span></div>
           <div class="term-line term-info">🚫 Blocked Cmds:  <span class="term-highlight">rm, sudo, shutdown</span></div>
           <div class="term-line term-info">🚫 Blocked Paths: <span class="term-highlight">/etc</span></div>
           <div class="term-line term-info">────────────────────────────────────────</div>
@@ -1060,11 +1060,11 @@
     // Interactive Terminal Simulation Script
     const terminalLines = [
       { text: "minishare", type: "input", delay: 100 },
-      { html: '<span class="term-muted">[MiniShare] Connecting to signaling server: http://localhost:8080</span>', targetId: "term-output-1", delay: 600 },
+      { html: '<span class="term-muted">[MiniShare] Connecting to signaling server: https://minishare.divamtech.com</span>', targetId: "term-output-1", delay: 600 },
       { html: '<br><span class="term-success">⚡ MiniShare Host Session Live</span>', targetId: "term-output-2", delay: 300 },
       { html: '🔑 <span class="term-white-bold">Session UUID:</span> <span class="term-cyan">5e8c1b9a-41f8-40a2-92e1-8889a74421b8</span><br>' +
               '💻 <span class="term-white-bold">Connect via CLI:</span> <span class="term-yellow">minishare connect 5e8c1b9a-41f8-40a2-92e1-8889a74421b8</span><br>' +
-              '🌐 <span class="term-white-bold">Connect via Web Browser:</span> <span class="term-link-underline">http://localhost:8080/app/5e8c1b9a-41f8-40a2-92e1-8889a74421b8</span><br>' +
+              '🌐 <span class="term-white-bold">Connect via Web Browser:</span> <span class="term-link-underline">https://minishare.divamtech.com/app/5e8c1b9a-41f8-40a2-92e1-8889a74421b8</span><br>' +
               '<span class="term-success">👉 Session UUID copied to clipboard automatically!</span>', targetId: "term-output-3", delay: 400 },
       { html: '<br><span class="term-muted">Waiting for peer to connect...</span>', targetId: "term-output-4", delay: 300 },
       { html: '<br><span class="term-success">✓ Peer connected successfully (Web Browser or CLI client)</span><br>' +

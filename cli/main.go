@@ -30,7 +30,7 @@ import (
 // -------------------------------------------------------------------
 // CONFIGURATION MANAGER & CROSS-PLATFORM STORAGE
 // -------------------------------------------------------------------
-const DefaultServerURL = "http://localhost:8080"
+const DefaultServerURL = "https://minishare.divamtech.com"
 
 type Config struct {
 	CustomConfigPath string    `json:"custom_config_path,omitempty"`

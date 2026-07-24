@@ -28,7 +28,7 @@ This package contains the standalone Go **Signaling Server** and embedded **Web 
    go run main.go --port 8080
    ```
 
-Open `http://localhost:8080` in your web browser to test the Web Terminal viewer interface!
+Open `https://minishare.divamtech.com` in your web browser to test the Web Terminal viewer interface!
 
 ---
 ## Direct binary

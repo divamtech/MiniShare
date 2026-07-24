@@ -8,6 +8,10 @@ bin/
 *.dll
 *.so
 *.dylib
+server/server
+server/server-*
+
+*.zip
 
 # Test binaries and output files
 *.test

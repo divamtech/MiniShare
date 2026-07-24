@@ -9,10 +9,10 @@
 
   <br />
   
-  <img src="./assets/landing_preview.jpg" alt="MiniShare Landing Hero" width="760" style="border-radius: 12px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.05);" />
+  <img src="./assets/landing_preview.jpg" alt="MiniShare Landing Hero" width="760" style="border-radius: 12px;" />
 </div>
 
----
+
 
 ## ✨ Features
 
@@ -22,17 +22,17 @@
 * **💻 Single Binary, Double Mode**: Host session terminal streams, or join active rooms from the command line using the same lightweight Go executable.
 * **🌐 Web Client App**: Invite browser users to view your active terminal stream directly via a responsive xterm.js Web App at `/app`.
 
----
+
 
 ## 📸 Web Terminal client (/app)
 
 The client loads a premium terminal viewer in any web browser, establishing a secure direct WebRTC link to the host console session:
 
 <div align="center">
-  <img src="./assets/app_terminal_preview.jpg" alt="MiniShare Web Terminal Client Viewer" width="700" style="border-radius: 8px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);" />
+  <img src="./assets/app_terminal_preview.jpg" alt="MiniShare Web Terminal Client Viewer" width="700" style="border-radius: 8px;" />
 </div>
 
----
+
 
 ## 📦 Installation
 
@@ -43,7 +43,7 @@ go build -o minishare main.go
 ```
 *(Or install globally: `go install github.com/divamtech/minishare/cli@latest`)*
 
----
+
 
 ## 🚀 Quick Start Guide
 
@@ -66,7 +66,7 @@ Teammates can connect to your live terminal session in one of two ways:
   ```
   *(Type `exit` or press `Ctrl+]` to detach from the session at any time)*
 
----
+
 
 ## 🛠️ CLI Command Reference
 
@@ -108,7 +108,7 @@ minishare unblock cmd <cmds...>      Unblock specific commands
 minishare unblock dir <paths...>     Unblock specific folder restrictions
 ```
 
----
+
 
 ## 🛡️ Sandbox & Security Filters in Action
 To restrict command lines on the fly, run:
@@ -117,7 +117,7 @@ minishare block cmd rm,sudo,shutdown,reboot
 ```
 When viewers connect, any attempt to run blocked binaries or navigate to blocked paths will be immediately terminated on the host before execution.
 
----
+
 
 ## 🌐 Run Signaling Server Locally
 Run the Go signaling server on your own server or cluster:
@@ -137,7 +137,6 @@ docker run -p 8080:8080 minishare-server
 
 To read more about repository folder structures and WebRTC signaling flow diagrams, check out [ARCHITECTURE.md](./ARCHITECTURE.md).
 
----
 
 ## 📄 License
 

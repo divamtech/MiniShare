@@ -31,7 +31,27 @@ This package contains the standalone Go **Signaling Server** and embedded **Web 
 Open `http://localhost:8080` in your web browser to test the Web Terminal viewer interface!
 
 ---
+## Direct binary
+```sh
+cd server
 
+# macOS (Apple Silicon - M1/M2/M3/M4)
+GOOS=darwin GOARCH=arm64 go build -o server main.go
+zip server-mac-silicon.zip server index.html app.html
+
+# macOS (Intel)
+GOOS=darwin GOARCH=amd64 go build -o server main.go
+zip server-mac-intel.zip server index.html app.html
+
+# Linux
+GOOS=linux GOARCH=amd64 go build -o server main.go
+zip server-linux.zip server index.html app.html
+
+# Windows
+GOOS=windows GOARCH=amd64 go build -o server.exe main.go
+zip server-windows.zip server.exe index.html app.html
+
+```
 ## Docker Deployment
 
 Build and run container locally:

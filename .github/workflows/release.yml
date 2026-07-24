@@ -1,0 +1,82 @@
+name: Build and Release Server
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  tag-and-release:
+    name: Tag and Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Required to get all history for correct versioning
+
+      - name: Bump version and push tag
+        id: tag_version
+        uses: anothrNick/github-tag-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}
+          DEFAULT_BUMP: minor
+          INITIAL_VERSION: 1.0.0
+          WITH_V: true
+          DEFAULT_BRANCH: main
+          RELEASE_BRANCHES: main
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.5'
+
+      - name: Build and Package Binaries
+        run: |
+          cd server
+          
+          # macOS (Apple Silicon - M1/M2/M3/M4)
+          GOOS=darwin GOARCH=arm64 go build -o server main.go
+          zip server-mac-silicon.zip server index.html app.html
+          rm -f server
+          
+          # macOS (Intel)
+          GOOS=darwin GOARCH=amd64 go build -o server main.go
+          zip server-mac-intel.zip server index.html app.html
+          rm -f server
+          
+          # Linux
+          GOOS=linux GOARCH=amd64 go build -o server main.go
+          zip server-linux.zip server index.html app.html
+          rm -f server
+          
+          # Windows
+          GOOS=windows GOARCH=amd64 go build -o server.exe main.go
+          zip server-windows.zip server.exe index.html app.html
+          rm -f server.exe
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: steps.tag_version.outputs.new_tag != ''
+        with:
+          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          body: |
+            Automatic release for version ${{ steps.tag_version.outputs.new_tag }}
+            
+            Included Server Binaries (packaged with template files):
+            - `server-mac-silicon.zip` (macOS Apple Silicon M1/M2/M3/M4)
+            - `server-mac-intel.zip` (macOS Intel)
+            - `server-linux.zip` (Linux 64-bit)
+            - `server-windows.zip` (Windows 64-bit)
+          files: |
+            server/server-mac-silicon.zip
+            server/server-mac-intel.zip
+            server/server-linux.zip
+            server/server-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}

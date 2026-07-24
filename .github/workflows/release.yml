@@ -19,6 +19,18 @@ jobs:
         with:
           fetch-depth: 0 # Required to get all history for correct versioning
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.5'
+
+      - name: Run Tests
+        run: |
+          echo "🧪 Running CLI Unit Tests..."
+          cd cli && go test -v ./...
+          echo "🧪 Running Server Integration Tests..."
+          cd ../server && go test -v ./...
+
       - name: Bump version and push tag
         id: tag_version
         uses: anothrNick/github-tag-action@v1
@@ -29,11 +41,6 @@ jobs:
           WITH_V: true
           DEFAULT_BRANCH: main
           RELEASE_BRANCHES: main
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23.5'
 
       - name: Build and Package Binaries
         run: |

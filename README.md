@@ -36,12 +36,19 @@ The client loads a premium terminal viewer in any web browser, establishing a se
 
 ## 📦 Installation
 
-Compile the zero-dependency executable binary locally:
+### ⚡ One-Line Install Script (macOS & Linux)
+Install the latest precompiled CLI binary instantly:
+```bash
+curl -fsSL https://raw.githubusercontent.com/divamtech/MiniShare/main/install.sh | sh
+```
+
+### 🛠️ Build from Source
+Or build the zero-dependency executable binary locally:
 ```bash
 cd cli
 go build -o minishare main.go
 ```
-*(Or install globally: `go install github.com/divamtech/minishare/cli@latest`)*
+*(Or install globally: `go install github.com/divamtech/minishare-cli@latest`)*
 
 
 

@@ -37,27 +37,57 @@ jobs:
 
       - name: Build and Package Binaries
         run: |
+          VERSION_TAG="${{ steps.tag_version.outputs.new_tag }}"
+          
+          # Build Server Binaries
           cd server
+          echo "$VERSION_TAG" > version
           
           # macOS (Apple Silicon - M1/M2/M3/M4)
           GOOS=darwin GOARCH=arm64 go build -o server main.go
-          zip server-mac-silicon.zip server index.html app.html
+          zip "server-mac-silicon-$VERSION_TAG.zip" server index.html app.html version
           rm -f server
           
           # macOS (Intel)
           GOOS=darwin GOARCH=amd64 go build -o server main.go
-          zip server-mac-intel.zip server index.html app.html
+          zip "server-mac-intel-$VERSION_TAG.zip" server index.html app.html version
           rm -f server
           
           # Linux
           GOOS=linux GOARCH=amd64 go build -o server main.go
-          zip server-linux.zip server index.html app.html
+          zip "server-linux-$VERSION_TAG.zip" server index.html app.html version
           rm -f server
           
           # Windows
           GOOS=windows GOARCH=amd64 go build -o server.exe main.go
-          zip server-windows.zip server.exe index.html app.html
+          zip "server-windows-$VERSION_TAG.zip" server.exe index.html app.html version
           rm -f server.exe
+          rm -f version
+          
+          # Build CLI Binaries
+          cd ../cli
+          echo "$VERSION_TAG" > version
+          
+          # macOS (Apple Silicon - M1/M2/M3/M4)
+          GOOS=darwin GOARCH=arm64 go build -o minishare main.go
+          zip "minishare-mac-silicon-$VERSION_TAG.zip" minishare version
+          rm -f minishare
+          
+          # macOS (Intel)
+          GOOS=darwin GOARCH=amd64 go build -o minishare main.go
+          zip "minishare-mac-intel-$VERSION_TAG.zip" minishare version
+          rm -f minishare
+          
+          # Linux
+          GOOS=linux GOARCH=amd64 go build -o minishare main.go
+          zip "minishare-linux-$VERSION_TAG.zip" minishare version
+          rm -f minishare
+          
+          # Windows
+          GOOS=windows GOARCH=amd64 go build -o minishare.exe main.go
+          zip "minishare-windows-$VERSION_TAG.zip" minishare.exe version
+          rm -f minishare.exe
+          rm -f version
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -69,14 +99,24 @@ jobs:
             Automatic release for version ${{ steps.tag_version.outputs.new_tag }}
             
             Included Server Binaries (packaged with template files):
-            - `server-mac-silicon.zip` (macOS Apple Silicon M1/M2/M3/M4)
-            - `server-mac-intel.zip` (macOS Intel)
-            - `server-linux.zip` (Linux 64-bit)
-            - `server-windows.zip` (Windows 64-bit)
+            - `server-mac-silicon-${{ steps.tag_version.outputs.new_tag }}.zip` (macOS Apple Silicon M1/M2/M3/M4)
+            - `server-mac-intel-${{ steps.tag_version.outputs.new_tag }}.zip` (macOS Intel)
+            - `server-linux-${{ steps.tag_version.outputs.new_tag }}.zip` (Linux 64-bit)
+            - `server-windows-${{ steps.tag_version.outputs.new_tag }}.zip` (Windows 64-bit)
+            
+            Included CLI Binaries (standalone executables):
+            - `minishare-mac-silicon-${{ steps.tag_version.outputs.new_tag }}.zip` (macOS Apple Silicon M1/M2/M3/M4)
+            - `minishare-mac-intel-${{ steps.tag_version.outputs.new_tag }}.zip` (macOS Intel)
+            - `minishare-linux-${{ steps.tag_version.outputs.new_tag }}.zip` (Linux 64-bit)
+            - `minishare-windows-${{ steps.tag_version.outputs.new_tag }}.zip` (Windows 64-bit)
           files: |
-            server/server-mac-silicon.zip
-            server/server-mac-intel.zip
-            server/server-linux.zip
-            server/server-windows.zip
+            server/server-mac-silicon-${{ steps.tag_version.outputs.new_tag }}.zip
+            server/server-mac-intel-${{ steps.tag_version.outputs.new_tag }}.zip
+            server/server-linux-${{ steps.tag_version.outputs.new_tag }}.zip
+            server/server-windows-${{ steps.tag_version.outputs.new_tag }}.zip
+            cli/minishare-mac-silicon-${{ steps.tag_version.outputs.new_tag }}.zip
+            cli/minishare-mac-intel-${{ steps.tag_version.outputs.new_tag }}.zip
+            cli/minishare-linux-${{ steps.tag_version.outputs.new_tag }}.zip
+            cli/minishare-windows-${{ steps.tag_version.outputs.new_tag }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT }}

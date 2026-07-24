@@ -4,6 +4,15 @@ The official command-line tool for **MiniShare** — real-time P2P terminal shar
 
 ## Installation & Setup
 
+### ⚡ Automatic Installation (macOS & Linux)
+You can download and install the latest precompiled CLI binary automatically with this command:
+```bash
+curl -fsSL https://raw.githubusercontent.com/divamtech/MiniShare/main/install.sh | sh
+```
+
+### 🛠️ Manual Build from Source
+If you prefer to build it yourself:
+
 1. Navigate to the `cli/` directory:
    ```bash
    cd cli
@@ -19,7 +28,26 @@ The official command-line tool for **MiniShare** — real-time P2P terminal shar
    go build -o minishare main.go
    ```
 
----
+### 📦 Cross-Platform Compilation
+To compile and package the CLI binaries for other platforms:
+
+```bash
+# macOS (Apple Silicon - M1/M2/M3/M4)
+GOOS=darwin GOARCH=arm64 go build -o minishare main.go
+zip minishare-mac-silicon.zip minishare
+
+# macOS (Intel)
+GOOS=darwin GOARCH=amd64 go build -o minishare main.go
+zip minishare-mac-intel.zip minishare
+
+# Linux
+GOOS=linux GOARCH=amd64 go build -o minishare main.go
+zip minishare-linux.zip minishare
+
+# Windows
+GOOS=windows GOARCH=amd64 go build -o minishare.exe main.go
+zip minishare-windows.zip minishare.exe
+```
 
 ## Commands & Clean Syntax
 

@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -670,6 +671,7 @@ func launchDaemonProcess() {
 
 	_ = os.WriteFile(uuidPath, []byte(sessionUUID), 0644)
 
+	// Build args for the child process: strip -d/--daemon flags
 	args := []string{}
 	for _, arg := range os.Args[1:] {
 		if arg != "-d" && arg != "--daemon" {
@@ -678,6 +680,7 @@ func launchDaemonProcess() {
 	}
 
 	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = append(os.Environ(), "MINISHARE_DAEMON=1")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		log.Fatalf("failed to open daemon log file: %v", err)
@@ -921,8 +924,11 @@ func printHelp() {
 // -------------------------------------------------------------------
 func runHost() {
 	cfg := LoadConfig()
+	isDaemon := os.Getenv("MINISHARE_DAEMON") == "1"
 
-	fmt.Printf("\033[90m[MiniShare] Connecting to signaling server: %s\033[0m\n", cfg.ServerURL)
+	if !isDaemon {
+		fmt.Printf("\033[90m[MiniShare] Connecting to signaling server: %s\033[0m\n", cfg.ServerURL)
+	}
 
 	manualFlag := flag.Bool("manual", false, "Run in manual copy-paste mode")
 	flag.CommandLine.Parse(os.Args[1:])
@@ -945,6 +951,13 @@ func runHost() {
 	}
 	defer ptmx.Close()
 
+	// Sync initial pty size from the host terminal (non-daemon only)
+	if !isDaemon {
+		if cols, rows, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
+			_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+		}
+	}
+
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
 	})
@@ -954,31 +967,60 @@ func runHost() {
 	defer pc.Close()
 
 	done := make(chan struct{})
+	var doneOnce sync.Once
+	closeDone := func() { doneOnce.Do(func() { close(done) }) }
 
 	dc, err := pc.CreateDataChannel("terminal", nil)
 	if err != nil {
 		log.Fatalf("failed to create data channel: %v", err)
 	}
 
+	// Put host terminal into raw mode so local I/O works correctly (non-daemon)
+	if !isDaemon {
+		if oldState, err := term.MakeRaw(int(os.Stdin.Fd())); err == nil {
+			defer term.Restore(int(os.Stdin.Fd()), oldState)
+		}
+	}
+
+	// Handle SIGWINCH for terminal resize (non-daemon only)
+	if !isDaemon {
+		winchChan := make(chan os.Signal, 1)
+		signal.Notify(winchChan, syscall.SIGWINCH)
+		go func() {
+			for {
+				select {
+				case <-winchChan:
+					if cols, rows, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
+						_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+					}
+				case <-done:
+					return
+				}
+			}
+		}()
+	}
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sigChan
-		log.Println("\n[MiniShare] Host shutting down...")
+		if !isDaemon {
+			fmt.Print("\r\n[MiniShare] Host shutting down...\r\n")
+		} else {
+			log.Println("[MiniShare] Host shutting down...")
+		}
 		if dc != nil {
 			_ = dc.Close()
 		}
 		_ = pc.Close()
-		select {
-		case <-done:
-		default:
-			close(done)
-		}
+		closeDone()
 	}()
 
 	dc.OnOpen(func() {
-		fmt.Println("\n\033[1;32m✓ Peer connected successfully (Web Browser or CLI client)\033[0m")
-		fmt.Println("\033[1;32mSession active — terminal streaming peer-to-peer...\033[0m\n")
+		if !isDaemon {
+			fmt.Print("\r\n\033[1;32m✓ Peer connected successfully (Web Browser or CLI client)\033[0m\r\n")
+			fmt.Print("\033[1;32mSession active — terminal streaming peer-to-peer...\033[0m\r\n\r\n")
+		}
 		log.Println("Data channel open — P2P session live")
 		hostname, _ := os.Hostname()
 		banner := fmt.Sprintf("\r\n\033[1;32m┌─────────────────────────────────────────────────────────────┐\033[0m\r\n"+
@@ -989,11 +1031,16 @@ func runHost() {
 			hostname, runtime.GOOS, shell)
 		_ = dc.Send([]byte(banner))
 
+		// Read pty output and send to both data channel and local stdout
 		go func() {
 			buf := make([]byte, 4096)
 			for {
 				n, err := ptmx.Read(buf)
 				if n > 0 {
+					// Echo to local terminal (host can see what's happening)
+					if !isDaemon {
+						_, _ = os.Stdout.Write(buf[:n])
+					}
 					if sendErr := dc.Send(buf[:n]); sendErr != nil {
 						break
 					}
@@ -1002,16 +1049,47 @@ func runHost() {
 					break
 				}
 			}
-			select {
-			case <-done:
-			default:
-				close(done)
-			}
+			closeDone()
 		}()
+
+		// Pipe host's local stdin to pty (non-daemon only)
+		if !isDaemon {
+			go func() {
+				buf := make([]byte, 1024)
+				for {
+					n, err := os.Stdin.Read(buf)
+					if n > 0 {
+						_, _ = ptmx.Write(buf[:n])
+					}
+					if err != nil {
+						break
+					}
+				}
+			}()
+		}
 	})
 
 	var cmdBuffer bytes.Buffer
 	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+		// Check for resize control message (prefixed with SOH byte \x01)
+		if len(msg.Data) > 1 && msg.Data[0] == 0x01 {
+			var resizeMsg struct {
+				Type string `json:"type"`
+				Cols int    `json:"cols"`
+				Rows int    `json:"rows"`
+			}
+			if err := json.Unmarshal(msg.Data[1:], &resizeMsg); err == nil && resizeMsg.Type == "resize" {
+				if resizeMsg.Cols > 0 && resizeMsg.Rows > 0 {
+					_ = pty.Setsize(ptmx, &pty.Winsize{
+						Rows: uint16(resizeMsg.Rows),
+						Cols: uint16(resizeMsg.Cols),
+					})
+					log.Printf("[Resize] Terminal resized to %dx%d", resizeMsg.Cols, resizeMsg.Rows)
+				}
+			}
+			return
+		}
+
 		// Check if we need to enforce security rules
 		hasBlockedCmds := len(cfg.BlockedCommands) > 0
 		hasBlockedDirs := len(cfg.BlockedFolders) > 0
@@ -1127,20 +1205,12 @@ func runHost() {
 
 	dc.OnClose(func() {
 		log.Println("Data channel closed")
-		select {
-		case <-done:
-		default:
-			close(done)
-		}
+		closeDone()
 	})
 
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		if state == webrtc.ICEConnectionStateDisconnected || state == webrtc.ICEConnectionStateFailed || state == webrtc.ICEConnectionStateClosed {
-			select {
-			case <-done:
-			default:
-				close(done)
-			}
+			closeDone()
 		}
 	})
 
@@ -1188,14 +1258,18 @@ func runHost() {
 	}
 
 	webLink := fmt.Sprintf("%s/app/%s", serverURL, sessResp.UUID)
-	fmt.Println("\n\033[1;32m⚡ MiniShare Host Session Live\033[0m")
-	fmt.Printf("🔑 \033[1;37mSession UUID:\033[0m \033[1;36m%s\033[0m\n", sessResp.UUID)
-	fmt.Printf("💻 \033[1;37mConnect via CLI:\033[0m \033[1;33mminishare connect %s\033[0m\n", sessResp.UUID)
-	fmt.Printf("🌐 \033[1;37mConnect via Web Browser:\033[0m \033[4;36m%s\033[0m\n", webLink)
-	copyToClipboard(sessResp.UUID)
-	fmt.Println("\033[1;32m👉 Session UUID copied to clipboard automatically!\033[0m")
-
-	fmt.Println("\n\033[90mWaiting for peer to connect...\033[0m")
+	if !isDaemon {
+		fmt.Print("\r\n\033[1;32m⚡ MiniShare Host Session Live\033[0m\r\n")
+		fmt.Printf("🔑 \033[1;37mSession UUID:\033[0m \033[1;36m%s\033[0m\r\n", sessResp.UUID)
+		fmt.Printf("💻 \033[1;37mConnect via CLI:\033[0m \033[1;33mminishare connect %s\033[0m\r\n", sessResp.UUID)
+		fmt.Printf("🌐 \033[1;37mConnect via Web Browser:\033[0m \033[4;36m%s\033[0m\r\n", webLink)
+		copyToClipboard(sessResp.UUID)
+		fmt.Print("\033[1;32m👉 Session UUID copied to clipboard automatically!\033[0m\r\n")
+		fmt.Print("\r\n\033[90mWaiting for peer to connect...\033[0m\r\n")
+	} else {
+		log.Printf("⚡ MiniShare Host Session Live — UUID: %s", sessResp.UUID)
+		log.Printf("🌐 Web: %s", webLink)
+	}
 
 	go func() {
 		for {
@@ -1227,7 +1301,11 @@ func runHost() {
 	}()
 
 	<-done
-	log.Println("Session ended")
+	if !isDaemon {
+		fmt.Print("\r\n[MiniShare] Session ended\r\n")
+	} else {
+		log.Println("Session ended")
+	}
 	time.Sleep(100 * time.Millisecond)
 }
 

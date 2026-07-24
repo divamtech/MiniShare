@@ -25,7 +25,7 @@ If you prefer to build it yourself:
 
 3. Build the executable binary:
    ```bash
-   go build -o minishare main.go
+   go build -o minishare
    ```
 
 ### 📦 Cross-Platform Compilation
@@ -33,19 +33,19 @@ To compile and package the CLI binaries for other platforms:
 
 ```bash
 # macOS (Apple Silicon - M1/M2/M3/M4)
-GOOS=darwin GOARCH=arm64 go build -o minishare main.go
+GOOS=darwin GOARCH=arm64 go build -o minishare
 zip minishare-mac-silicon.zip minishare
 
 # macOS (Intel)
-GOOS=darwin GOARCH=amd64 go build -o minishare main.go
+GOOS=darwin GOARCH=amd64 go build -o minishare
 zip minishare-mac-intel.zip minishare
 
 # Linux
-GOOS=linux GOARCH=amd64 go build -o minishare main.go
+GOOS=linux GOARCH=amd64 go build -o minishare
 zip minishare-linux.zip minishare
 
 # Windows
-GOOS=windows GOARCH=amd64 go build -o minishare.exe main.go
+GOOS=windows GOARCH=amd64 go build -o minishare.exe
 zip minishare-windows.zip minishare.exe
 ```
 

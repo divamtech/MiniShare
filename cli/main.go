@@ -685,7 +685,7 @@ func launchDaemonProcess() {
 
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.SysProcAttr = getSysProcAttr()
 
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("failed to start background daemon: %v", err)

@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/divamtech/MiniShare/main/install.sh
 Or build the zero-dependency executable binary locally:
 ```bash
 cd cli
-go build -o minishare main.go
+go build -o minishare
 ```
 *(Or install globally: `go install github.com/divamtech/minishare-cli@latest`)*
 

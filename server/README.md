@@ -36,19 +36,19 @@ Open `http://localhost:8080` in your web browser to test the Web Terminal viewer
 cd server
 
 # macOS (Apple Silicon - M1/M2/M3/M4)
-GOOS=darwin GOARCH=arm64 go build -o server main.go
+GOOS=darwin GOARCH=arm64 go build -o server
 zip server-mac-silicon.zip server index.html app.html
 
 # macOS (Intel)
-GOOS=darwin GOARCH=amd64 go build -o server main.go
+GOOS=darwin GOARCH=amd64 go build -o server
 zip server-mac-intel.zip server index.html app.html
 
 # Linux
-GOOS=linux GOARCH=amd64 go build -o server main.go
+GOOS=linux GOARCH=amd64 go build -o server
 zip server-linux.zip server index.html app.html
 
 # Windows
-GOOS=windows GOARCH=amd64 go build -o server.exe main.go
+GOOS=windows GOARCH=amd64 go build -o server.exe
 zip server-windows.zip server.exe index.html app.html
 
 ```

@@ -44,22 +44,22 @@ jobs:
           echo "$VERSION_TAG" > version
           
           # macOS (Apple Silicon - M1/M2/M3/M4)
-          GOOS=darwin GOARCH=arm64 go build -o server main.go
+          GOOS=darwin GOARCH=arm64 go build -o server
           zip "server-mac-silicon-$VERSION_TAG.zip" server index.html app.html version
           rm -f server
           
           # macOS (Intel)
-          GOOS=darwin GOARCH=amd64 go build -o server main.go
+          GOOS=darwin GOARCH=amd64 go build -o server
           zip "server-mac-intel-$VERSION_TAG.zip" server index.html app.html version
           rm -f server
           
           # Linux
-          GOOS=linux GOARCH=amd64 go build -o server main.go
+          GOOS=linux GOARCH=amd64 go build -o server
           zip "server-linux-$VERSION_TAG.zip" server index.html app.html version
           rm -f server
           
           # Windows
-          GOOS=windows GOARCH=amd64 go build -o server.exe main.go
+          GOOS=windows GOARCH=amd64 go build -o server.exe
           zip "server-windows-$VERSION_TAG.zip" server.exe index.html app.html version
           rm -f server.exe
           rm -f version
@@ -69,22 +69,22 @@ jobs:
           echo "$VERSION_TAG" > version
           
           # macOS (Apple Silicon - M1/M2/M3/M4)
-          GOOS=darwin GOARCH=arm64 go build -o minishare main.go
+          GOOS=darwin GOARCH=arm64 go build -o minishare
           zip "minishare-mac-silicon-$VERSION_TAG.zip" minishare version
           rm -f minishare
           
           # macOS (Intel)
-          GOOS=darwin GOARCH=amd64 go build -o minishare main.go
+          GOOS=darwin GOARCH=amd64 go build -o minishare
           zip "minishare-mac-intel-$VERSION_TAG.zip" minishare version
           rm -f minishare
           
           # Linux
-          GOOS=linux GOARCH=amd64 go build -o minishare main.go
+          GOOS=linux GOARCH=amd64 go build -o minishare
           zip "minishare-linux-$VERSION_TAG.zip" minishare version
           rm -f minishare
           
           # Windows
-          GOOS=windows GOARCH=amd64 go build -o minishare.exe main.go
+          GOOS=windows GOARCH=amd64 go build -o minishare.exe
           zip "minishare-windows-$VERSION_TAG.zip" minishare.exe version
           rm -f minishare.exe
           rm -f version

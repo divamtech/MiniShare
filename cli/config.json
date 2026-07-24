@@ -1,11 +1,6 @@
 {
-  "server_url": "http://localhost:8080",
+  "server_url": "https://minishare.divamtech.com",
   "uuid_expires_at": "0001-01-01T00:00:00Z",
-  "blocked_commands": [
-    "sudo"
-  ],
-  "blocked_folders": [
-    "/etc",
-    "/etc/nginx"
-  ]
+  "blocked_commands": [],
+  "blocked_folders": []
 }

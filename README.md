@@ -7,9 +7,11 @@
   [![WebRTC](https://img.shields.io/badge/Network-100%25%20P2P%20(WebRTC)-orange.svg)](#)
   [![E2EE](https://img.shields.io/badge/Security-End--to--End%20Encrypted-purple.svg)](#)
 
+  <p><strong>🌐 Live server:</strong> <a href="https://minishare.divamtech.com/">https://minishare.divamtech.com/</a></p>
+
   <br />
   
-  <img src="./assets/landing_preview.jpg" alt="MiniShare Landing Hero" width="760" style="border-radius: 12px;" />
+  <img src="https://raw.githubusercontent.com/divamtech/MiniShare/main/assets/landing_preview.jpg" alt="MiniShare Landing Hero" width="760" style="border-radius: 12px;" />
 </div>
 
 
@@ -29,7 +31,7 @@
 The client loads a premium terminal viewer in any web browser, establishing a secure direct WebRTC link to the host console session:
 
 <div align="center">
-  <img src="./assets/app_terminal_preview.jpg" alt="MiniShare Web Terminal Client Viewer" width="700" style="border-radius: 8px;" />
+  <img src="https://raw.githubusercontent.com/divamtech/MiniShare/main/assets/app_terminal_preview.jpg" alt="MiniShare Web Terminal Client Viewer" width="700" style="border-radius: 8px;" />
 </div>
 
 
@@ -127,7 +129,7 @@ When viewers connect, any attempt to run blocked binaries or navigate to blocked
 
 
 ## 🌐 Run Signaling Server Locally
-Run the Go signaling server on your own server or cluster:
+By default the CLI uses the hosted signaling server at <https://minishare.divamtech.com/>, so no setup is required. To self-host instead, run the Go signaling server on your own machine or cluster:
 ```bash
 cd server
 go run main.go --port 8080

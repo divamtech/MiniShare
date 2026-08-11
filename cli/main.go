@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -951,6 +952,26 @@ func runHost() {
 	}
 	defer ptmx.Close()
 
+	// Single PTY output reader goroutine for the lifetime of ptmx
+	ptyOutputChan := make(chan []byte, 200)
+	shellExited := make(chan struct{})
+
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				tmp := make([]byte, n)
+				copy(tmp, buf[:n])
+				ptyOutputChan <- tmp
+			}
+			if err != nil {
+				close(shellExited)
+				break
+			}
+		}
+	}()
+
 	// Sync initial pty size from the host terminal (non-daemon only)
 	if !isDaemon {
 		if cols, rows, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
@@ -958,43 +979,22 @@ func runHost() {
 		}
 	}
 
-	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
-	})
-	if err != nil {
-		log.Fatalf("failed to create peer connection: %v", err)
-	}
-	defer pc.Close()
-
-	done := make(chan struct{})
-	var doneOnce sync.Once
-	closeDone := func() { doneOnce.Do(func() { close(done) }) }
-
-	dc, err := pc.CreateDataChannel("terminal", nil)
-	if err != nil {
-		log.Fatalf("failed to create data channel: %v", err)
-	}
-
 	// Put host terminal into raw mode so local I/O works correctly (non-daemon)
 	if !isDaemon {
 		if oldState, err := term.MakeRaw(int(os.Stdin.Fd())); err == nil {
 			defer term.Restore(int(os.Stdin.Fd()), oldState)
 		}
-	}
 
-	// Handle SIGWINCH for terminal resize (non-daemon only)
-	if !isDaemon {
-		winchChan := make(chan os.Signal, 1)
-		signal.Notify(winchChan, syscall.SIGWINCH)
+		// Pipe host's local stdin to pty (non-daemon only)
 		go func() {
+			buf := make([]byte, 1024)
 			for {
-				select {
-				case <-winchChan:
-					if cols, rows, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
-						_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
-					}
-				case <-done:
-					return
+				n, err := os.Stdin.Read(buf)
+				if n > 0 {
+					_, _ = ptmx.Write(buf[:n])
+				}
+				if err != nil {
+					break
 				}
 			}
 		}()
@@ -1002,181 +1002,211 @@ func runHost() {
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	processTerminated := false
+
 	go func() {
 		<-sigChan
+		processTerminated = true
 		if !isDaemon {
 			fmt.Print("\r\n[MiniShare] Host shutting down...\r\n")
 		} else {
 			log.Println("[MiniShare] Host shutting down...")
 		}
-		if dc != nil {
-			_ = dc.Close()
-		}
-		_ = pc.Close()
-		closeDone()
 	}()
 
-	dc.OnOpen(func() {
-		if !isDaemon {
-			fmt.Print("\r\n\033[1;32m✓ Peer connected successfully (Web Browser or CLI client)\033[0m\r\n")
-			fmt.Print("\033[1;32mSession active — terminal streaming peer-to-peer...\033[0m\r\n\r\n")
-		}
-		log.Println("Data channel open — P2P session live")
-		hostname, _ := os.Hostname()
-		banner := fmt.Sprintf("\r\n\033[1;32m┌─────────────────────────────────────────────────────────────┐\033[0m\r\n"+
-			"\033[1;32m│  ⚡ CONNECTED TO REMOTE HOST: %-29s │\033[0m\r\n"+
-			"\033[1;32m│  OS: %-9s | Shell: %-25s │\033[0m\r\n"+
-			"\033[1;32m│  Exit: Type 'exit' or press 'Ctrl+]' to detach             │\033[0m\r\n"+
-			"\033[1;32m└─────────────────────────────────────────────────────────────┘\033[0m\r\n\r\n",
-			hostname, runtime.GOOS, shell)
-		_ = dc.Send([]byte(banner))
+	// Buffer to keep recent terminal output while waiting for viewer
+	var scrollbackMu sync.Mutex
+	scrollback := make([]byte, 0, 16384)
 
-		// Read pty output and send to both data channel and local stdout
-		go func() {
-			buf := make([]byte, 4096)
-			for {
-				n, err := ptmx.Read(buf)
-				if n > 0 {
-					// Echo to local terminal (host can see what's happening)
-					if !isDaemon {
-						_, _ = os.Stdout.Write(buf[:n])
-					}
-					if sendErr := dc.Send(buf[:n]); sendErr != nil {
-						break
-					}
+	// Background worker to collect PTY output into scrollback buffer and current data channel
+	var currentDC atomic.Value // holds *webrtc.DataChannel
+
+	go func() {
+		for {
+			select {
+			case <-shellExited:
+				return
+			case data, ok := <-ptyOutputChan:
+				if !ok {
+					return
 				}
-				if err != nil {
-					break
+				if !isDaemon {
+					_, _ = os.Stdout.Write(data)
+				}
+				scrollbackMu.Lock()
+				if len(scrollback)+len(data) > 16384 {
+					overflow := (len(scrollback) + len(data)) - 16384
+					if overflow < len(scrollback) {
+						scrollback = append(scrollback[overflow:], data...)
+					} else {
+						scrollback = append([]byte(nil), data...)
+					}
+				} else {
+					scrollback = append(scrollback, data...)
+				}
+				scrollbackMu.Unlock()
+
+				if dcVal := currentDC.Load(); dcVal != nil {
+					if dc, ok := dcVal.(*webrtc.DataChannel); ok && dc != nil {
+						_ = dc.Send(data)
+					}
 				}
 			}
-			closeDone()
-		}()
+		}
+	}()
 
-		// Pipe host's local stdin to pty (non-daemon only)
+	for {
+		if processTerminated {
+			break
+		}
+
+		select {
+		case <-shellExited:
+			if !isDaemon {
+				fmt.Print("\r\n[MiniShare] Shell process exited.\r\n")
+			} else {
+				log.Println("[MiniShare] Shell process exited.")
+			}
+			return
+		default:
+		}
+
+		pc, err := webrtc.NewPeerConnection(webrtc.Configuration{
+			ICEServers: []webrtc.ICEServer{{URLs: []string{"stun:stun.l.google.com:19302"}}},
+		})
+		if err != nil {
+			log.Fatalf("failed to create peer connection: %v", err)
+		}
+
+		done := make(chan struct{})
+		var doneOnce sync.Once
+		closeDone := func() { doneOnce.Do(func() { close(done) }) }
+
+		dc, err := pc.CreateDataChannel("terminal", nil)
+		if err != nil {
+			pc.Close()
+			log.Fatalf("failed to create data channel: %v", err)
+		}
+
+		// Handle SIGWINCH for terminal resize (non-daemon only)
+		var winchChan chan os.Signal
 		if !isDaemon {
+			winchChan = make(chan os.Signal, 1)
+			signal.Notify(winchChan, syscall.SIGWINCH)
 			go func() {
-				buf := make([]byte, 1024)
 				for {
-					n, err := os.Stdin.Read(buf)
-					if n > 0 {
-						_, _ = ptmx.Write(buf[:n])
-					}
-					if err != nil {
-						break
+					select {
+					case <-winchChan:
+						if cols, rows, err := term.GetSize(int(os.Stdin.Fd())); err == nil {
+							_ = pty.Setsize(ptmx, &pty.Winsize{Rows: uint16(rows), Cols: uint16(cols)})
+						}
+					case <-done:
+						return
 					}
 				}
 			}()
 		}
-	})
 
-	var cmdBuffer bytes.Buffer
-	dc.OnMessage(func(msg webrtc.DataChannelMessage) {
-		// Check for resize control message (prefixed with SOH byte \x01)
-		if len(msg.Data) > 1 && msg.Data[0] == 0x01 {
-			var resizeMsg struct {
-				Type string `json:"type"`
-				Cols int    `json:"cols"`
-				Rows int    `json:"rows"`
+		dc.OnOpen(func() {
+			if !isDaemon {
+				fmt.Print("\r\n\033[1;32m✓ Peer connected successfully (Web Browser or CLI client)\033[0m\r\n")
+				fmt.Print("\033[1;32mSession active — terminal streaming peer-to-peer...\033[0m\r\n\r\n")
 			}
-			if err := json.Unmarshal(msg.Data[1:], &resizeMsg); err == nil && resizeMsg.Type == "resize" {
-				if resizeMsg.Cols > 0 && resizeMsg.Rows > 0 {
-					_ = pty.Setsize(ptmx, &pty.Winsize{
-						Rows: uint16(resizeMsg.Rows),
-						Cols: uint16(resizeMsg.Cols),
-					})
-					log.Printf("[Resize] Terminal resized to %dx%d", resizeMsg.Cols, resizeMsg.Rows)
+			log.Println("Data channel open — P2P session live")
+
+			scrollbackMu.Lock()
+			if len(scrollback) > 0 {
+				_ = dc.Send(scrollback)
+			}
+			scrollbackMu.Unlock()
+
+			hostname, _ := os.Hostname()
+			banner := fmt.Sprintf("\r\n\033[1;32m┌─────────────────────────────────────────────────────────────┐\033[0m\r\n"+
+				"\033[1;32m│  ⚡ CONNECTED TO REMOTE HOST: %-29s │\033[0m\r\n"+
+				"\033[1;32m│  OS: %-9s | Shell: %-25s │\033[0m\r\n"+
+				"\033[1;32m│  Exit: Type 'exit' or press 'Ctrl+]' to detach             │\033[0m\r\n"+
+				"\033[1;32m└─────────────────────────────────────────────────────────────┘\033[0m\r\n\r\n",
+				hostname, runtime.GOOS, shell)
+			_ = dc.Send([]byte(banner))
+
+			currentDC.Store(dc)
+		})
+
+		var cmdBuffer bytes.Buffer
+		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			// Check for resize control message (prefixed with SOH byte \x01)
+			if len(msg.Data) > 1 && msg.Data[0] == 0x01 {
+				var resizeMsg struct {
+					Type string `json:"type"`
+					Cols int    `json:"cols"`
+					Rows int    `json:"rows"`
 				}
+				if err := json.Unmarshal(msg.Data[1:], &resizeMsg); err == nil && resizeMsg.Type == "resize" {
+					if resizeMsg.Cols > 0 && resizeMsg.Rows > 0 {
+						_ = pty.Setsize(ptmx, &pty.Winsize{
+							Rows: uint16(resizeMsg.Rows),
+							Cols: uint16(resizeMsg.Cols),
+						})
+						log.Printf("[Resize] Terminal resized to %dx%d", resizeMsg.Cols, resizeMsg.Rows)
+					}
+				}
+				return
 			}
-			return
-		}
 
-		// Check if we need to enforce security rules
-		hasBlockedCmds := len(cfg.BlockedCommands) > 0
-		hasBlockedDirs := len(cfg.BlockedFolders) > 0
+			// Check if we need to enforce security rules
+			hasBlockedCmds := len(cfg.BlockedCommands) > 0
+			hasBlockedDirs := len(cfg.BlockedFolders) > 0
 
-		// If no security rules, fast path — forward everything
-		if !hasBlockedCmds && !hasBlockedDirs {
+			// If no security rules, fast path — forward everything
+			if !hasBlockedCmds && !hasBlockedDirs {
+				for _, b := range msg.Data {
+					if b == '\r' || b == '\n' {
+						if typedCmd := strings.TrimSpace(cmdBuffer.String()); typedCmd != "" {
+							log.Printf("⌨️  [Viewer Command Executed]: %s", typedCmd)
+						}
+						cmdBuffer.Reset()
+					} else if b == 127 || b == 8 {
+						if cmdBuffer.Len() > 0 {
+							cmdBuffer.Truncate(cmdBuffer.Len() - 1)
+						}
+					} else if b >= 32 && b <= 126 {
+						cmdBuffer.WriteByte(b)
+					}
+				}
+				_, _ = ptmx.Write(msg.Data)
+				return
+			}
+
+			// Security-enforced path: process byte-by-byte
 			for _, b := range msg.Data {
 				if b == '\r' || b == '\n' {
-					if typedCmd := strings.TrimSpace(cmdBuffer.String()); typedCmd != "" {
-						log.Printf("⌨️  [Viewer Command Executed]: %s", typedCmd)
-					}
-					cmdBuffer.Reset()
-				} else if b == 127 || b == 8 {
-					if cmdBuffer.Len() > 0 {
-						cmdBuffer.Truncate(cmdBuffer.Len() - 1)
-					}
-				} else if b >= 32 && b <= 126 {
-					cmdBuffer.WriteByte(b)
-				}
-			}
-			_, _ = ptmx.Write(msg.Data)
-			return
-		}
+					typedCmd := strings.TrimSpace(cmdBuffer.String())
+					if typedCmd != "" {
+						log.Printf("⌨️  [Viewer Command]: %s", typedCmd)
 
-		// Security-enforced path: process byte-by-byte
-		for _, b := range msg.Data {
-			if b == '\r' || b == '\n' {
-				typedCmd := strings.TrimSpace(cmdBuffer.String())
-				if typedCmd != "" {
-					log.Printf("⌨️  [Viewer Command]: %s", typedCmd)
-
-					// --- Check blocked commands ---
-					if hasBlockedCmds {
-						cmdParts := strings.Fields(typedCmd)
-						blocked := false
-						for _, part := range cmdParts {
-							cleanPart := strings.ToLower(strings.TrimSpace(part))
-							if cleanPart == "|" || cleanPart == "&&" || cleanPart == "||" || cleanPart == ";" {
-								continue
-							}
-							for _, blockedCmd := range cfg.BlockedCommands {
-								if cleanPart == blockedCmd {
-									blocked = true
+						// --- Check blocked commands ---
+						if hasBlockedCmds {
+							cmdParts := strings.Fields(typedCmd)
+							blocked := false
+							for _, part := range cmdParts {
+								cleanPart := strings.ToLower(strings.TrimSpace(part))
+								if cleanPart == "|" || cleanPart == "&&" || cleanPart == "||" || cleanPart == ";" {
+									continue
+								}
+								for _, blockedCmd := range cfg.BlockedCommands {
+									if cleanPart == blockedCmd {
+										blocked = true
+										break
+									}
+								}
+								if blocked {
 									break
 								}
 							}
+
 							if blocked {
-								break
-							}
-						}
-
-						if blocked {
-							log.Printf("🚫 [Security] BLOCKED command: %s", typedCmd)
-							rejectMsg := fmt.Sprintf("\r\n\033[1;31m🚫 [MiniShare Security] Command '%s' is BLOCKED by host.\033[0m\r\n", typedCmd)
-							_ = dc.Send([]byte(rejectMsg))
-							cmdBuffer.Reset()
-							// Clear the typed text from the terminal line and refresh prompt
-							_ = dc.Send([]byte("\033[2K\r"))
-							_, _ = ptmx.Write([]byte("\n"))
-							continue
-						}
-					}
-
-					// --- Check blocked folders (cd command) ---
-					if hasBlockedDirs {
-						cmdParts := strings.Fields(typedCmd)
-						if len(cmdParts) >= 2 && cmdParts[0] == "cd" {
-							targetDir := cmdParts[1]
-							if !filepath.IsAbs(targetDir) {
-								if home, err := os.UserHomeDir(); err == nil {
-									targetDir = filepath.Join(home, targetDir)
-								}
-							}
-							targetDir = filepath.Clean(targetDir)
-
-							dirBlocked := false
-							for _, blockedDir := range cfg.BlockedFolders {
-								blockedDir = filepath.Clean(blockedDir)
-								if targetDir == blockedDir || strings.HasPrefix(targetDir, blockedDir+string(filepath.Separator)) {
-									dirBlocked = true
-									break
-								}
-							}
-
-							if dirBlocked {
-								log.Printf("🚫 [Security] BLOCKED folder access: %s", cmdParts[1])
-								rejectMsg := fmt.Sprintf("\r\n\033[1;31m🚫 [MiniShare Security] Access to '%s' is BLOCKED by host.\033[0m\r\n", cmdParts[1])
+								log.Printf("🚫 [Security] BLOCKED command: %s", typedCmd)
+								rejectMsg := fmt.Sprintf("\r\n\033[1;31m🚫 [MiniShare Security] Command '%s' is BLOCKED by host.\033[0m\r\n", typedCmd)
 								_ = dc.Send([]byte(rejectMsg))
 								cmdBuffer.Reset()
 								_ = dc.Send([]byte("\033[2K\r"))
@@ -1184,127 +1214,182 @@ func runHost() {
 								continue
 							}
 						}
+
+						// --- Check blocked folders (cd command) ---
+						if hasBlockedDirs {
+							cmdParts := strings.Fields(typedCmd)
+							if len(cmdParts) >= 2 && cmdParts[0] == "cd" {
+								targetDir := cmdParts[1]
+								if !filepath.IsAbs(targetDir) {
+									if home, err := os.UserHomeDir(); err == nil {
+										targetDir = filepath.Join(home, targetDir)
+									}
+								}
+								targetDir = filepath.Clean(targetDir)
+
+								dirBlocked := false
+								for _, blockedDir := range cfg.BlockedFolders {
+									blockedDir = filepath.Clean(blockedDir)
+									if targetDir == blockedDir || strings.HasPrefix(targetDir, blockedDir+string(filepath.Separator)) {
+										dirBlocked = true
+										break
+									}
+								}
+
+								if dirBlocked {
+									log.Printf("🚫 [Security] BLOCKED folder access: %s", cmdParts[1])
+									rejectMsg := fmt.Sprintf("\r\n\033[1;31m🚫 [MiniShare Security] Access to '%s' is BLOCKED by host.\033[0m\r\n", cmdParts[1])
+									_ = dc.Send([]byte(rejectMsg))
+									cmdBuffer.Reset()
+									_ = dc.Send([]byte("\033[2K\r"))
+									_, _ = ptmx.Write([]byte("\n"))
+									continue
+								}
+							}
+						}
+					}
+					cmdBuffer.Reset()
+					_, _ = ptmx.Write([]byte{b})
+				} else if b == 127 || b == 8 {
+					if cmdBuffer.Len() > 0 {
+						cmdBuffer.Truncate(cmdBuffer.Len() - 1)
+					}
+					_, _ = ptmx.Write([]byte{b})
+				} else {
+					if b >= 32 && b <= 126 {
+						cmdBuffer.WriteByte(b)
+					}
+					_, _ = ptmx.Write([]byte{b})
+				}
+			}
+		})
+
+		dc.OnClose(func() {
+			log.Println("Data channel closed")
+			closeDone()
+		})
+
+		pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+			if state == webrtc.ICEConnectionStateDisconnected || state == webrtc.ICEConnectionStateFailed || state == webrtc.ICEConnectionStateClosed {
+				closeDone()
+			}
+		})
+
+		offer, err := pc.CreateOffer(nil)
+		if err != nil {
+			log.Fatalf("failed to create offer: %v", err)
+		}
+		gatherComplete := webrtc.GatheringCompletePromise(pc)
+		if err := pc.SetLocalDescription(offer); err != nil {
+			log.Fatalf("failed to set local description: %v", err)
+		}
+		<-gatherComplete
+
+		offerCode := encodePayload(pc.LocalDescription())
+
+		if *manualFlag {
+			runManualHost(pc, offerCode, done)
+			return
+		}
+
+		serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
+		payload := map[string]string{
+			"offer": offerCode,
+		}
+		if sessionUUID != "" {
+			payload["uuid"] = sessionUUID
+		}
+
+		resp, err := postJSON(serverURL+"/api/session", payload)
+		if err != nil {
+			fmt.Printf("⚠️ Signaling server unavailable (%v). Falling back to manual mode...\n", err)
+			runManualHost(pc, offerCode, done)
+			return
+		}
+
+		var sessResp struct {
+			UUID string `json:"uuid"`
+		}
+		_ = json.Unmarshal(resp, &sessResp)
+
+		if sessResp.UUID != "" {
+			sessionUUID = sessResp.UUID
+		} else {
+			fmt.Println("⚠️ Failed to obtain UUID from signaling server. Falling back to manual mode...")
+			runManualHost(pc, offerCode, done)
+			return
+		}
+
+		webLink := fmt.Sprintf("%s/app/%s", serverURL, sessResp.UUID)
+		if !isDaemon {
+			fmt.Print("\r\n\033[1;32m⚡ MiniShare Host Session Live\033[0m\r\n")
+			fmt.Printf("🔑 \033[1;37mSession UUID:\033[0m \033[1;36m%s\033[0m\r\n", sessResp.UUID)
+			fmt.Printf("💻 \033[1;37mConnect via CLI:\033[0m \033[1;33mminishare connect %s\033[0m\r\n", sessResp.UUID)
+			fmt.Printf("🌐 \033[1;37mConnect via Web Browser:\033[0m \033[4;36m%s\033[0m\r\n", webLink)
+			copyToClipboard(sessResp.UUID)
+			fmt.Print("\033[1;32m👉 Session UUID copied to clipboard automatically!\033[0m\r\n")
+			fmt.Print("\r\n\033[90mWaiting for peer to connect...\033[0m\r\n")
+		} else {
+			log.Printf("⚡ MiniShare Host Session Live — UUID: %s", sessResp.UUID)
+			log.Printf("🌐 Web: %s", webLink)
+		}
+
+		go func() {
+			for {
+				time.Sleep(1 * time.Second)
+				select {
+				case <-done:
+					return
+				default:
+				}
+
+				ansResp, err := getJSON(fmt.Sprintf("%s/api/session/%s/answer", serverURL, sessResp.UUID))
+				if err == nil {
+					var ansData struct {
+						Answer string `json:"answer"`
+					}
+					_ = json.Unmarshal(ansResp, &ansData)
+					if ansData.Answer != "" {
+						var answer webrtc.SessionDescription
+						decodePayload(ansData.Answer, &answer)
+						if setErr := pc.SetRemoteDescription(answer); setErr != nil {
+							log.Printf("error setting remote answer: %v", setErr)
+						} else {
+							log.Println("Remote answer received — establishing P2P link...")
+						}
+						break
 					}
 				}
-				cmdBuffer.Reset()
-				// Command passed security checks — forward the Enter key
-				_, _ = ptmx.Write([]byte{b})
-			} else if b == 127 || b == 8 {
-				if cmdBuffer.Len() > 0 {
-					cmdBuffer.Truncate(cmdBuffer.Len() - 1)
-				}
-				_, _ = ptmx.Write([]byte{b})
-			} else {
-				if b >= 32 && b <= 126 {
-					cmdBuffer.WriteByte(b)
-				}
-				_, _ = ptmx.Write([]byte{b})
 			}
-		}
-	})
+		}()
 
-	dc.OnClose(func() {
-		log.Println("Data channel closed")
-		closeDone()
-	})
-
-	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		if state == webrtc.ICEConnectionStateDisconnected || state == webrtc.ICEConnectionStateFailed || state == webrtc.ICEConnectionStateClosed {
+		select {
+		case <-done:
+		case <-shellExited:
 			closeDone()
 		}
-	})
 
-	offer, err := pc.CreateOffer(nil)
-	if err != nil {
-		log.Fatalf("failed to create offer: %v", err)
-	}
-	gatherComplete := webrtc.GatheringCompletePromise(pc)
-	if err := pc.SetLocalDescription(offer); err != nil {
-		log.Fatalf("failed to set local description: %v", err)
-	}
-	<-gatherComplete
+		currentDC.Store((*webrtc.DataChannel)(nil))
+		_ = dc.Close()
+		_ = pc.Close()
 
-	offerCode := encodePayload(pc.LocalDescription())
-
-	if *manualFlag {
-		runManualHost(pc, offerCode, done)
-		return
-	}
-
-	serverURL := strings.TrimSuffix(cfg.ServerURL, "/")
-	payload := map[string]string{
-		"offer": offerCode,
-	}
-	if sessionUUID != "" {
-		payload["uuid"] = sessionUUID
-	}
-
-	resp, err := postJSON(serverURL+"/api/session", payload)
-	if err != nil {
-		fmt.Printf("⚠️ Signaling server unavailable (%v). Falling back to manual mode...\n", err)
-		runManualHost(pc, offerCode, done)
-		return
-	}
-
-	var sessResp struct {
-		UUID string `json:"uuid"`
-	}
-	_ = json.Unmarshal(resp, &sessResp)
-
-	if sessResp.UUID == "" {
-		fmt.Println("⚠️ Failed to obtain UUID from signaling server. Falling back to manual mode...")
-		runManualHost(pc, offerCode, done)
-		return
-	}
-
-	webLink := fmt.Sprintf("%s/app/%s", serverURL, sessResp.UUID)
-	if !isDaemon {
-		fmt.Print("\r\n\033[1;32m⚡ MiniShare Host Session Live\033[0m\r\n")
-		fmt.Printf("🔑 \033[1;37mSession UUID:\033[0m \033[1;36m%s\033[0m\r\n", sessResp.UUID)
-		fmt.Printf("💻 \033[1;37mConnect via CLI:\033[0m \033[1;33mminishare connect %s\033[0m\r\n", sessResp.UUID)
-		fmt.Printf("🌐 \033[1;37mConnect via Web Browser:\033[0m \033[4;36m%s\033[0m\r\n", webLink)
-		copyToClipboard(sessResp.UUID)
-		fmt.Print("\033[1;32m👉 Session UUID copied to clipboard automatically!\033[0m\r\n")
-		fmt.Print("\r\n\033[90mWaiting for peer to connect...\033[0m\r\n")
-	} else {
-		log.Printf("⚡ MiniShare Host Session Live — UUID: %s", sessResp.UUID)
-		log.Printf("🌐 Web: %s", webLink)
-	}
-
-	go func() {
-		for {
-			time.Sleep(1 * time.Second)
-			select {
-			case <-done:
-				return
-			default:
+		if !isDaemon || processTerminated {
+			if !isDaemon {
+				fmt.Print("\r\n[MiniShare] Session ended\r\n")
+			} else {
+				log.Println("Session ended")
 			}
-
-			ansResp, err := getJSON(fmt.Sprintf("%s/api/session/%s/answer", serverURL, sessResp.UUID))
-			if err == nil {
-				var ansData struct {
-					Answer string `json:"answer"`
-				}
-				_ = json.Unmarshal(ansResp, &ansData)
-				if ansData.Answer != "" {
-					var answer webrtc.SessionDescription
-					decodePayload(ansData.Answer, &answer)
-					if setErr := pc.SetRemoteDescription(answer); setErr != nil {
-						log.Printf("error setting remote answer: %v", setErr)
-					} else {
-						log.Println("Remote answer received — establishing P2P link...")
-					}
-					break
-				}
-			}
+			break
 		}
-	}()
 
-	<-done
-	if !isDaemon {
-		fmt.Print("\r\n[MiniShare] Session ended\r\n")
-	} else {
-		log.Println("Session ended")
+		select {
+		case <-shellExited:
+			log.Println("Shell exited — stopping host daemon")
+			return
+		default:
+			log.Println("[MiniShare] Viewer disconnected. Host daemon active — waiting for reconnection...")
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
 	time.Sleep(100 * time.Millisecond)
 }

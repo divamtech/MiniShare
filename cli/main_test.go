@@ -394,3 +394,14 @@ func TestProcessExists(t *testing.T) {
 		t.Error("processExists(9999999) = true, expected false")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// MINISHARE_DAEMON env detection
+// ---------------------------------------------------------------------------
+func TestDaemonEnvFlag(t *testing.T) {
+	t.Setenv("MINISHARE_DAEMON", "1")
+	if os.Getenv("MINISHARE_DAEMON") != "1" {
+		t.Errorf("expected MINISHARE_DAEMON to be 1")
+	}
+}
+

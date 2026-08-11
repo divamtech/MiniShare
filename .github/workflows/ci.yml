@@ -1,0 +1,32 @@
+name: CI / Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Unit & Integration Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.5'
+          cache: true
+
+      - name: Run CLI Tests
+        run: |
+          echo "🧪 Running CLI Unit Tests..."
+          cd cli && go test -v ./...
+
+      - name: Run Server Tests
+        run: |
+          echo "🧪 Running Server Integration Tests..."
+          cd server && go test -v ./...

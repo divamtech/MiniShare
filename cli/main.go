@@ -1354,7 +1354,7 @@ func runHost() {
 		var winchChan chan os.Signal
 		if !isDaemon {
 			winchChan = make(chan os.Signal, 1)
-			signal.Notify(winchChan, syscall.SIGWINCH)
+			setupWinchSignal(winchChan)
 			go func() {
 				for {
 					select {

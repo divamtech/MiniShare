@@ -405,3 +405,46 @@ func TestDaemonEnvFlag(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Version comparison & Release asset name tests
+// ---------------------------------------------------------------------------
+func TestIsNewerVersion(t *testing.T) {
+	tests := []struct {
+		current string
+		latest  string
+		want    bool
+	}{
+		{"v1.0.0", "v1.0.0", false},
+		{"v1.0.0", "v1.1.0", true},
+		{"v1.0.0", "v1.0.1", true},
+		{"v1.2.0", "v2.0.0", true},
+		{"v1.2.0", "v1.1.9", false},
+		{"1.0.0", "v1.0.1", true},
+		{"v1.0.1", "1.0.0", false},
+		{"v1.0", "v1.0.1", true},
+	}
+
+	for _, tc := range tests {
+		got := isNewerVersion(tc.current, tc.latest)
+		if got != tc.want {
+			t.Errorf("isNewerVersion(%q, %q) = %v, want %v", tc.current, tc.latest, got, tc.want)
+		}
+	}
+}
+
+func TestGetReleaseAssetName(t *testing.T) {
+	asset, err := getReleaseAssetName("v1.0.0")
+	if err != nil {
+		t.Fatalf("getReleaseAssetName() unexpected error: %v", err)
+	}
+	if asset == "" || !strings.Contains(asset, "v1.0.0") || !strings.HasSuffix(asset, ".zip") {
+		t.Errorf("getReleaseAssetName() = %q, expected valid zip filename with v1.0.0 tag", asset)
+	}
+
+	_, errEmpty := getReleaseAssetName("")
+	if errEmpty == nil {
+		t.Error("getReleaseAssetName(\"\") expected error, got nil")
+	}
+}
+
+

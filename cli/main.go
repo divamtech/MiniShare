@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"compress/flate"
@@ -32,6 +33,7 @@ import (
 // -------------------------------------------------------------------
 // CONFIGURATION MANAGER & CROSS-PLATFORM STORAGE
 // -------------------------------------------------------------------
+var Version = "dev"
 const DefaultServerURL = "https://minishare.divamtech.com"
 
 type Config struct {
@@ -785,11 +787,269 @@ func processExists(pid int) bool {
 }
 
 // -------------------------------------------------------------------
+// VERSION & SELF-UPDATE COMMANDS
+// -------------------------------------------------------------------
+func HandleVersionCommand() {
+	fmt.Printf("MiniShare CLI version %s (%s/%s)\n", Version, runtime.GOOS, runtime.GOARCH)
+}
+
+func isNewerVersion(current, latest string) bool {
+	cleanCurr := strings.TrimPrefix(strings.TrimSpace(current), "v")
+	cleanLat := strings.TrimPrefix(strings.TrimSpace(latest), "v")
+
+	if cleanCurr == cleanLat {
+		return false
+	}
+
+	currParts := strings.Split(cleanCurr, ".")
+	latParts := strings.Split(cleanLat, ".")
+
+	for i := 0; i < len(currParts) && i < len(latParts); i++ {
+		cVal, err1 := strconv.Atoi(currParts[i])
+		lVal, err2 := strconv.Atoi(latParts[i])
+		if err1 == nil && err2 == nil {
+			if lVal > cVal {
+				return true
+			}
+			if lVal < cVal {
+				return false
+			}
+		} else {
+			if latParts[i] > currParts[i] {
+				return true
+			}
+			if latParts[i] < currParts[i] {
+				return false
+			}
+		}
+	}
+	return len(latParts) > len(currParts)
+}
+
+func getReleaseAssetName(tag string) (string, error) {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return "", fmt.Errorf("empty version tag")
+	}
+
+	switch runtime.GOOS {
+	case "darwin":
+		switch runtime.GOARCH {
+		case "arm64":
+			return fmt.Sprintf("minishare-mac-silicon-%s.zip", tag), nil
+		case "amd64":
+			return fmt.Sprintf("minishare-mac-intel-%s.zip", tag), nil
+		default:
+			return "", fmt.Errorf("unsupported macOS architecture: %s", runtime.GOARCH)
+		}
+	case "linux":
+		if runtime.GOARCH == "amd64" {
+			return fmt.Sprintf("minishare-linux-%s.zip", tag), nil
+		}
+		return "", fmt.Errorf("unsupported Linux architecture: %s", runtime.GOARCH)
+	case "windows":
+		if runtime.GOARCH == "amd64" {
+			return fmt.Sprintf("minishare-windows-%s.zip", tag), nil
+		}
+		return "", fmt.Errorf("unsupported Windows architecture: %s", runtime.GOARCH)
+	default:
+		return "", fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+}
+
+func HandleUpdateCommand() {
+	fmt.Println("🔍 Checking for MiniShare CLI updates on GitHub...")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/divamtech/MiniShare/releases/latest", nil)
+	if err != nil {
+		fmt.Printf("❌ Failed to create update check request: %v\n", err)
+		return
+	}
+	req.Header.Set("User-Agent", "MiniShare-CLI")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Printf("❌ Failed to connect to GitHub API: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("❌ GitHub API returned status code %d\n", resp.StatusCode)
+		return
+	}
+
+	var releaseInfo struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releaseInfo); err != nil || releaseInfo.TagName == "" {
+		fmt.Println("❌ Failed to parse release version from GitHub.")
+		return
+	}
+
+	latestTag := strings.TrimSpace(releaseInfo.TagName)
+	if !isNewerVersion(Version, latestTag) {
+		fmt.Printf("✨ MiniShare CLI is already up to date (version %s).\n", Version)
+		return
+	}
+
+	assetName, err := getReleaseAssetName(latestTag)
+	if err != nil {
+		fmt.Printf("❌ %v\n", err)
+		return
+	}
+
+	fmt.Printf("\n⚡ New update available: \033[1;32m%s\033[0m (Current: %s)\n", latestTag, Version)
+	fmt.Print("Do you want to install it now? [y/N]: ")
+
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.ToLower(strings.TrimSpace(answer))
+
+	if answer != "y" && answer != "yes" {
+		fmt.Println("Update canceled.")
+		return
+	}
+
+	downloadURL := fmt.Sprintf("https://github.com/divamtech/MiniShare/releases/download/%s/%s", latestTag, assetName)
+	fmt.Printf("📦 Downloading %s...\n", downloadURL)
+
+	dlReq, err := http.NewRequest(http.MethodGet, downloadURL, nil)
+	if err != nil {
+		fmt.Printf("❌ Failed to create download request: %v\n", err)
+		return
+	}
+	dlReq.Header.Set("User-Agent", "MiniShare-CLI")
+
+	dlResp, err := client.Do(dlReq)
+	if err != nil {
+		fmt.Printf("❌ Failed to download release package: %v\n", err)
+		return
+	}
+	defer dlResp.Body.Close()
+
+	if dlResp.StatusCode != http.StatusOK {
+		fmt.Printf("❌ Download failed with HTTP status %d\n", dlResp.StatusCode)
+		return
+	}
+
+	zipBytes, err := io.ReadAll(dlResp.Body)
+	if err != nil {
+		fmt.Printf("❌ Failed to read download package: %v\n", err)
+		return
+	}
+
+	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		fmt.Printf("❌ Failed to parse ZIP package: %v\n", err)
+		return
+	}
+
+	execName := "minishare"
+	if runtime.GOOS == "windows" {
+		execName = "minishare.exe"
+	}
+
+	var binaryBytes []byte
+	for _, file := range zipReader.File {
+		cleanFileName := filepath.Base(file.Name)
+		if cleanFileName == execName {
+			f, err := file.Open()
+			if err != nil {
+				fmt.Printf("❌ Failed to open binary inside ZIP: %v\n", err)
+				return
+			}
+			binaryBytes, err = io.ReadAll(f)
+			f.Close()
+			if err != nil {
+				fmt.Printf("❌ Failed to extract binary from ZIP: %v\n", err)
+				return
+			}
+			break
+		}
+	}
+
+	if len(binaryBytes) == 0 {
+		fmt.Printf("❌ Binary '%s' not found inside release asset ZIP.\n", execName)
+		return
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		fmt.Printf("❌ Failed to locate active executable path: %v\n", err)
+		return
+	}
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		fmt.Printf("❌ Failed to resolve symlinks for executable: %v\n", err)
+		return
+	}
+
+	dir := filepath.Dir(execPath)
+
+	if runtime.GOOS == "windows" {
+		oldPath := execPath + ".old"
+		_ = os.Remove(oldPath)
+		if err := os.Rename(execPath, oldPath); err != nil {
+			fmt.Printf("❌ Failed to move old executable on Windows: %v\n", err)
+			return
+		}
+		if err := os.WriteFile(execPath, binaryBytes, 0755); err != nil {
+			_ = os.Rename(oldPath, execPath)
+			fmt.Printf("❌ Failed to write new binary: %v\n", err)
+			return
+		}
+		_ = os.Remove(oldPath)
+	} else {
+		tmpFile, err := os.CreateTemp(dir, "minishare-update-*.tmp")
+		if err != nil {
+			fmt.Printf("❌ Failed to create temporary file in %s: %v\n(You may need to run with sudo: sudo minishare update)\n", dir, err)
+			return
+		}
+		tmpPath := tmpFile.Name()
+
+		if _, err := tmpFile.Write(binaryBytes); err != nil {
+			tmpFile.Close()
+			_ = os.Remove(tmpPath)
+			fmt.Printf("❌ Failed to write update binary: %v\n", err)
+			return
+		}
+		tmpFile.Close()
+
+		if err := os.Chmod(tmpPath, 0755); err != nil {
+			_ = os.Remove(tmpPath)
+			fmt.Printf("❌ Failed to set executable permissions: %v\n", err)
+			return
+		}
+
+		if err := os.Rename(tmpPath, execPath); err != nil {
+			_ = os.Remove(tmpPath)
+			fmt.Printf("❌ Failed to replace executable at %s: %v\n(Try running: sudo minishare update)\n", execPath, err)
+			return
+		}
+	}
+
+	fmt.Printf("\n✔ \033[1;32mMiniShare CLI successfully updated to %s!\033[0m\n", latestTag)
+}
+
+// -------------------------------------------------------------------
 // MAIN CLI ENTRYPOINT
 // -------------------------------------------------------------------
 func main() {
 	if len(os.Args) > 1 {
 		cmd1 := strings.ToLower(os.Args[1])
+
+		// Version & Self-Update commands
+		if cmd1 == "version" || cmd1 == "-v" || cmd1 == "--version" || cmd1 == "v" {
+			HandleVersionCommand()
+			return
+		}
+
+		if cmd1 == "update" {
+			HandleUpdateCommand()
+			return
+		}
 
 		// Reset commands: minishare reset [default|all|server|uuid|share|path]
 		if cmd1 == "reset" {
@@ -885,7 +1145,9 @@ func printHelp() {
   [CMD]minishare kill -d[RESET]                    [DESC]Stop running background daemon process[RESET]
   [CMD]minishare connect|-c|c[RESET] [PARAM]<session-uuid>[RESET] [DESC]Connect to a remote Host session[RESET]
 
-[HEADER]Configuration Management:[RESET]
+[HEADER]Management & System:[RESET]
+  [CMD]minishare version[RESET]                    [DESC]Print current MiniShare CLI version (alias: -v, --version)[RESET]
+  [CMD]minishare update[RESET]                     [DESC]Check GitHub and self-update CLI binary to latest release[RESET]
   [CMD]minishare config[RESET]                     [DESC]View active settings & config file location[RESET]
 
 [HEADER]Set Options:[RESET]
